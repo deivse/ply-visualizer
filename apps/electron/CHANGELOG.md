@@ -3,7 +3,7 @@
 Changes to the desktop app. Each version's section becomes the notes of its
 GitHub release (`desktop-v<version>`), so keep the `## <version>` headings.
 
-## Unreleased
+## 0.1.7
 
 - **Reopen the last session:** File → Open Recent lists the last few closed
   windows as "Last session: 8 files in 3 groups · scans · 16 Nov 14:32".
@@ -14,7 +14,6 @@ GitHub release (`desktop-v<version>`), so keep the `## <version>` headings.
   Each file's settings come back too: point size, colour mode, render modes
   (points, splats, mesh, wireframe, normals), transform, visibility,
   collapsed state, solo and locks. The camera is not restored.
-
 - **Full paths:** the app records where each opened file is on disk (also for
   drops and the Add Point Cloud button). Hover a name to see it, or turn on
   **Show full paths** with the `/x/y/…` button next to Expand all, in a card's
