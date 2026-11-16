@@ -1,13 +1,36 @@
 <script lang="ts">
+  import { untrack } from 'svelte';
   import Modal from './Modal.svelte';
+  import ChipButton from './ChipButton.svelte';
+  import { popover } from '../utils/popover';
   import type { FileListHost } from './fileListTypes';
   import { filesState } from '../state/files.svelte';
   import { fileGroupsState } from '../state/fileGroups.svelte';
   import { soloState, soloLayout } from '../state/solo.svelte';
   import { fileSelection, selectAllListed, clearSelection } from '../state/fileSelection.svelte';
+  import {
+    toggleFileNameOption,
+    fileNameOptionOn,
+    announceFileNameOptions,
+    FILE_NAME_OPTIONS,
+  } from '../state/fileNames.svelte';
+  import { originalNamesState } from '../state/fileAliases.svelte';
   import { compileGroupRegex, groupRegexPresets, NO_MATCH } from '../utils/regexGroups';
 
   let { host }: { host: FileListHost } = $props();
+
+  // The ⇄ for all files shows up once any file has an alias; it follows the
+  // files' own ⇄ buttons, and so does the desktop View menu.
+  const originalNames = $derived((filesState.entries, originalNamesState()));
+  const anyAlias = $derived(originalNames.aliased > 0);
+  // Numbers, so the effect runs only when they change (not on every list update).
+  const aliasedCount = $derived(originalNames.aliased);
+  const originalCount = $derived(originalNames.original);
+  $effect(() => {
+    aliasedCount;
+    originalCount;
+    untrack(announceFileNameOptions);
+  });
 
   const hasFiles = $derived((filesState.entries, host.solo.topLevel().length > 0));
   const groups = $derived.by(() => {
@@ -61,32 +84,12 @@
       : []),
     { heading: 'Presets', items: presets.map((p) => ({ source: p.source, label: p.label })) },
   ]);
-  const flatItems = $derived(menuItems.flatMap((section) => section.items));
   let menuOpen = $state(false);
   let menuButton = $state<HTMLButtonElement | null>(null);
   let menuEl = $state<HTMLDivElement | null>(null);
-  let menuPos = $state({ top: 0, right: 0, maxHeight: 300, maxWidth: 420 });
-  let highlighted = $state(-1);
-
-  function placeMenu() {
-    if (!menuButton) return;
-    const rect = menuButton.getBoundingClientRect();
-    const margin = 8;
-    menuPos = {
-      top: rect.bottom + 2,
-      right: Math.max(margin, window.innerWidth - rect.right),
-      maxHeight: Math.max(120, window.innerHeight - rect.bottom - margin - 2),
-      // Long patterns ellipsize (hover shows them in full) instead of
-      // stretching the menu across the window.
-      maxWidth: Math.max(200, Math.min(480, rect.right - margin)),
-    };
-  }
 
   function openMenu() {
-    placeMenu();
-    highlighted = flatItems.findIndex((item) => item.source === fileGroupsState.regex);
     menuOpen = true;
-    queueMicrotask(() => menuEl?.focus());
   }
 
   function closeMenu(refocus = true) {
@@ -100,64 +103,29 @@
     closeMenu();
   }
 
-  function onMenuKeydown(event: KeyboardEvent) {
-    if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
-      const delta = event.key === 'ArrowDown' ? 1 : -1;
-      highlighted = (highlighted + delta + flatItems.length) % flatItems.length;
-      menuEl?.querySelectorAll('.group-menu-item')[highlighted]?.scrollIntoView({ block: 'nearest' });
-    } else if (event.key === 'Enter' && highlighted >= 0) {
-      pick(flatItems[highlighted].source);
-    } else if (event.key === 'Escape' || event.key === 'Tab') {
-      closeMenu(event.key === 'Escape');
-    } else {
-      return;
-    }
-    event.preventDefault();
-    event.stopPropagation();
-  }
-
   function setAllCollapsed(collapsed: boolean) {
     for (const entry of host.fileEntries.all) {
       entry.state.collapsed = collapsed;
     }
   }
 
-  function onWindowPointerDown(event: PointerEvent) {
-    const target = event.target as HTMLElement;
-    if (menuOpen && !target.closest('.group-menu, .group-recent')) {
-      closeMenu(false);
-    }
-  }
 </script>
-
-<svelte:window
-  onpointerdown={onWindowPointerDown}
-  onresize={() => menuOpen && placeMenu()}
-/>
 
 {#if hasFiles}
   <div class="file-list-toolbar">
-    <button
-      class="flt-btn"
-      class:on={!soloLayout.hidden}
-      aria-pressed={!soloLayout.hidden}
+    <ChipButton
+      on={!soloLayout.hidden}
       title="Show or hide the floating solo panel"
-      onclick={() => host.solo.togglePanel()}>Solo panel</button
+      onclick={() => host.solo.togglePanel()}>Solo panel</ChipButton
     >
     <span class="flt-spacer"></span>
-    <button
-      class="flt-btn"
-      class:on={fileGroupsState.enabled}
-      aria-pressed={fileGroupsState.enabled}
+    <ChipButton
+      on={fileGroupsState.enabled}
       title="Group files by a pattern in their names and show one group at a time"
-      onclick={() => host.solo.setGroupingEnabled(!fileGroupsState.enabled)}>Group</button
+      onclick={() => host.solo.setGroupingEnabled(!fileGroupsState.enabled)}>Group</ChipButton
     >
-    <button
-      class="flt-btn group-help-btn"
-      class:on={helpOpen}
-      title="How grouping works"
-      aria-expanded={helpOpen}
-      onclick={() => (helpOpen = !helpOpen)}>?</button
+    <ChipButton round expanded={helpOpen} title="How grouping works" onclick={() => (helpOpen = !helpOpen)}
+      >?</ChipButton
     >
   </div>
 
@@ -228,28 +196,27 @@
       {#if menuOpen}
         <div
           bind:this={menuEl}
-          class="group-menu"
+          class="group-menu popover-menu"
           role="menu"
           tabindex="-1"
           aria-label="Recent patterns and presets"
-          style:top="{menuPos.top}px"
-          style:right="{menuPos.right}px"
-          style:max-height="{menuPos.maxHeight}px"
-          style:max-width="{menuPos.maxWidth}px"
-          onkeydown={onMenuKeydown}
+          use:popover={{
+            anchor: menuButton,
+            align: 'end',
+            onclose: () => closeMenu(false),
+            initialFocus: () => menuEl?.querySelector<HTMLElement>('.group-menu-item.current'),
+          }}
         >
           {#each menuItems as section (section.heading)}
-            <div class="group-menu-heading">{section.heading}</div>
+            <div class="popover-menu-heading">{section.heading}</div>
             {#each section.items as item (section.heading + item.source)}
-              {@const index = flatItems.indexOf(item)}
               <button
                 class="group-menu-item"
-                class:highlighted={index === highlighted}
                 class:current={item.source === fileGroupsState.regex}
                 role="menuitem"
                 tabindex="-1"
                 title={item.label ? `${item.label}\n${item.source}` : item.source}
-                onpointerenter={() => (highlighted = index)}
+                onpointerenter={(event) => (event.currentTarget as HTMLElement).focus()}
                 onclick={() => pick(item.source)}
               >
                 {#if item.label}<span class="group-menu-label">{item.label}</span>{/if}
@@ -273,8 +240,8 @@
     {#if active}
       <div class="group-switcher" title="← → or , . switch groups">
         <span class="group-label">Group</span>
-        <button class="flt-btn" title="Previous group (← , PageUp)" onclick={() => host.solo.stepGroup(-1)}
-          >‹</button
+        <ChipButton title="Previous group (← , PageUp)" onclick={() => host.solo.stepGroup(-1)}
+          >‹</ChipButton
         >
         <select
           class="group-select"
@@ -286,8 +253,8 @@
             <option value={group.key}>{group.key} ({group.members.length})</option>
           {/each}
         </select>
-        <button class="flt-btn" title="Next group (→ . PageDown)" onclick={() => host.solo.stepGroup(1)}
-          >›</button
+        <ChipButton title="Next group (→ . PageDown)" onclick={() => host.solo.stepGroup(1)}
+          >›</ChipButton
         >
         <span class="group-pos">{activeIndex + 1}/{groups.length}</span>
       </div>
@@ -295,23 +262,27 @@
   {/if}
 
   <div class="file-list-collapse-row" data-no-scene-render>
-    <button class="flt-btn" title="Collapse all objects" onclick={() => setAllCollapsed(true)}
-      >▶ Collapse all</button
+    <ChipButton title="Collapse all objects" onclick={() => setAllCollapsed(true)}
+      >▶ Collapse all</ChipButton
     >
-    <button class="flt-btn" title="Expand all objects" onclick={() => setAllCollapsed(false)}
-      >▼ Expand all</button
+    <ChipButton title="Expand all objects" onclick={() => setAllCollapsed(false)}
+      >▼ Expand all</ChipButton
     >
+    {#each FILE_NAME_OPTIONS.filter((option) => option.key !== 'originalNames' || anyAlias) as option (option.key)}
+      <ChipButton
+        on={fileNameOptionOn(option.key)}
+        title={option.title}
+        onclick={() => toggleFileNameOption(option.key)}>{option.chip}</ChipButton
+      >
+    {/each}
     <span class="flt-spacer"></span>
     <!-- Kept together: when the panel is narrow they wrap as a pair. -->
     <span class="flt-group">
-      <button class="flt-btn" title="Select every listed file" onclick={selectAllListed}
-        >Select all</button
-      >
-      <button
-        class="flt-btn"
+      <ChipButton title="Select every listed file" onclick={selectAllListed}>Select all</ChipButton>
+      <ChipButton
         title="Clear the selection"
         disabled={!fileSelection.ids.length}
-        onclick={clearSelection}>Clear selection</button
+        onclick={clearSelection}>Clear selection</ChipButton
       >
     </span>
   </div>
@@ -338,39 +309,9 @@
     margin-bottom: 4px;
     border-bottom: 1px solid var(--vscode-sideBar-border, rgba(127, 127, 127, 0.3));
   }
-  .flt-btn {
-    font: inherit;
-    font-size: 11px;
-    color: var(--vscode-foreground);
-    background: transparent;
-    border: 1px solid var(--vscode-sideBar-border, #555);
-    border-radius: 3px;
-    padding: 1px 6px;
-    cursor: pointer;
-    white-space: nowrap;
-  }
   .flt-group {
     display: flex;
     gap: 6px;
-  }
-  .flt-btn:disabled {
-    opacity: 0.45;
-    cursor: default;
-  }
-  .flt-btn:hover:not(:disabled) {
-    background: var(--vscode-list-hoverBackground);
-  }
-  .flt-btn.on {
-    background: var(--vscode-button-background);
-    color: var(--vscode-button-foreground);
-    border-color: var(--vscode-button-background);
-  }
-  .group-help-btn {
-    border-radius: 50%;
-    width: 18px;
-    height: 18px;
-    padding: 0;
-    font-weight: 700;
   }
   .group-help {
     line-height: 1.5;
@@ -434,45 +375,16 @@
   .group-recent.open {
     border-color: var(--vscode-focusBorder, #0078d4);
   }
+  /* Surface and items: .popover-menu (media/style.css). Long patterns
+     ellipsize (hover shows them in full) instead of stretching the menu. */
   .group-menu {
-    position: fixed;
-    z-index: 1000;
     min-width: 220px;
-    overflow-y: auto;
-    padding: 4px 0;
-    border: 1px solid var(--vscode-menu-border, var(--vscode-focusBorder, #454545));
-    border-radius: 5px;
-    background: var(--vscode-menu-background, var(--vscode-editorWidget-background, #252526));
-    color: var(--vscode-menu-foreground, var(--vscode-foreground));
-    box-shadow: 0 6px 20px rgba(0, 0, 0, 0.4);
-    font-size: 11.5px;
-    outline: none;
-  }
-  .group-menu-heading {
-    padding: 4px 10px 2px;
-    font-size: 10px;
-    font-weight: 700;
-    letter-spacing: 0.06em;
-    text-transform: uppercase;
-    opacity: 0.6;
+    max-width: min(480px, calc(100vw - 16px));
   }
   .group-menu-item {
-    display: flex;
     flex-direction: column;
     align-items: flex-start;
     gap: 1px;
-    width: 100%;
-    padding: 3px 10px;
-    border: 0;
-    background: transparent;
-    color: inherit;
-    font: inherit;
-    text-align: left;
-    cursor: pointer;
-  }
-  .group-menu-item.highlighted {
-    background: var(--vscode-menu-selectionBackground, var(--vscode-list-activeSelectionBackground, #04395e));
-    color: var(--vscode-menu-selectionForeground, inherit);
   }
   .group-menu-item.current .group-menu-source::after {
     content: '  ✓';

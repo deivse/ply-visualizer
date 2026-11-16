@@ -22,6 +22,8 @@ export interface EntryPresentation {
   pointsVisible: boolean;
   normalsVisible: boolean;
   splatModeActive: boolean;
+  /** Show this entry's real name although it has an alias (state/fileAliases). */
+  showOriginalName: boolean;
 }
 
 export function defaultEntryPresentation(): EntryPresentation {
@@ -40,6 +42,7 @@ export function defaultEntryPresentation(): EntryPresentation {
     pointsVisible: true,
     normalsVisible: false,
     splatModeActive: false,
+    showOriginalName: false,
   };
 }
 

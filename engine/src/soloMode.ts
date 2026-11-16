@@ -5,12 +5,24 @@ import { fileGroupsState, saveFileGroups, rememberGroupRegex } from './state/fil
 import { compileGroupRegex, groupByRegex, type RegexGroup } from './utils/regexGroups';
 import type { ViewerLifetime } from './utils/viewerLifetime';
 import { stopControlsInertia } from './utils/controlsInertia';
+import { moveEntry, compareListOrder } from './utils/reorderEntries';
+import { fileNameOptions } from './state/fileNames.svelte';
+import {
+  entryName,
+  entryLabel,
+  renameEntryInViewer,
+  type EntryName,
+  type EntryLabel,
+} from './utils/entryNames';
+import { filesState } from './state/files.svelte';
 
 /**
  * Layered visibility: group scope + DAW-style solo, over each entry's own
  * visibility setting (its checkbox, "mute").
  *
- *   effective = inActiveGroup && (soloActive ? soloed : ownVisible)
+ *   effective = inActiveGroup && ownVisible && (!soloActive || soloed)
+ *
+ * so a soloed file whose own checkbox is off stays hidden.
  *
  * While any layer is active, the own settings live in `soloState.saved` and
  * `entry.state.visible` holds the effective value, so every renderer/picker
@@ -23,7 +35,10 @@ import { stopControlsInertia } from './utils/controlsInertia';
  * file whose name is the same outside the captured text.
  *
  * Solo: 1-9 / click S = exclusive solo (again = end); Shift+1-9 / Ctrl-click =
- * add/remove; [ ] ↑ ↓ step; 0 / Esc end. Groups: ← → , . PageUp PageDown
+ * add/remove; [ ] ↑ ↓ step; 0 / Esc end. A locked entry (lock button) keeps
+ * the solo state it had: one locked while soloed is part of every solo, so the
+ * others can be soloed against it; one locked while not soloed never is.
+ * Groups: ← → , . PageUp PageDown
  * (← → step solo instead when there is only one group).
  * Children (camera frames of a scan, …) follow their top-level parent.
  */
@@ -46,15 +61,6 @@ interface GroupView {
   target: THREE.Vector3;
   fov: number;
   zoom: number;
-}
-
-export function entryDisplayName(entry: FileEntry): string {
-  return (
-    entry.spatial?.data.fileName ??
-    entry.pose?.meta.fileName ??
-    entry.camera?.name ??
-    `Object ${entry.id}`
-  );
 }
 
 export class SoloController {
@@ -81,12 +87,60 @@ export class SoloController {
     return this.host.fileEntries.all
       .map((entry, index) => ({ entry, index }))
       .filter(({ entry }) => entry.parentId === null)
-      .sort(
-        (a, b) =>
-          (a.entry.state.listOrder ?? Number.MAX_SAFE_INTEGER) -
-            (b.entry.state.listOrder ?? Number.MAX_SAFE_INTEGER) || a.index - b.index
-      )
+      .sort(compareListOrder)
       .map(({ entry }) => entry);
+  }
+
+  /** An entry's name as both lists show it (utils/entryNames). */
+  nameOf(entry: FileEntry): EntryName {
+    return entryName(entry, this.host.fileEntries, fileNameOptions.fullPaths);
+  }
+
+  /** What the lists show for an entry: its alias, if it has one (utils/entryNames). */
+  labelOf(entry: FileEntry): EntryLabel {
+    return entryLabel(entry, this.host.fileEntries, fileNameOptions);
+  }
+
+  /**
+   * "Rename in viewer": a new name for display and grouping in this window;
+   * the file on disk keeps its name. Groups follow at once.
+   */
+  renameInViewer(entry: FileEntry, name: string): void {
+    if (!renameEntryInViewer(entry, name)) {
+      return;
+    }
+    // Names are plain data: tell the lists, then regroup.
+    filesState.entries = [...filesState.entries];
+    if (fileGroupsState.enabled) {
+      this.refreshScope();
+    }
+  }
+
+  /**
+   * The group to show, also before any of its files are loaded (a restored
+   * session): it becomes active as soon as it exists, unless another group
+   * is chosen first.
+   */
+  preferGroup(key: string): void {
+    fileGroupsState.active = key;
+    saveFileGroups();
+    this.refreshScope();
+  }
+
+  /** The grouping settings, for a host that saves the session. */
+  groupSettings(): { enabled: boolean; regex: string; active: string | null; count: number } {
+    return {
+      enabled: fileGroupsState.enabled,
+      regex: fileGroupsState.regex,
+      // The chosen group, also while it is still loading (restored session).
+      active: fileGroupsState.active || (this.activeGroup()?.key ?? null),
+      count: this.groups().length,
+    };
+  }
+
+  /** Moves an entry in the list order the file list and solo panel share. */
+  move(id: number, target: { beforeId?: number | null; afterId?: number | null }): void {
+    moveEntry(this.host.fileEntries.all, id, target);
   }
 
   /** Top-level entries of the active group; what number keys and stepping address. */
@@ -105,7 +159,8 @@ export class SoloController {
     if (!compiled.ok) {
       return [];
     }
-    return groupByRegex(this.topLevel(), entryDisplayName, compiled.regex);
+    // The regex sees names as the file list shows them: full paths when on.
+    return groupByRegex(this.topLevel(), entry => this.nameOf(entry).text, compiled.regex);
   }
 
   activeGroup(groups = this.groups()): RegexGroup<FileEntry> | null {
@@ -287,6 +342,51 @@ export class SoloController {
     return soloState.ids.includes(id);
   }
 
+  isLocked(id: number): boolean {
+    return soloState.locked.includes(id);
+  }
+
+  /**
+   * Locks an entry in its current solo state, or unlocks it. A lock stores
+   * nothing but the id: whether the entry is soloed is always `soloState.ids`,
+   * which `setSolo` keeps unchanged for locked entries.
+   */
+  toggleLock(id: number): void {
+    soloState.locked = this.isLocked(id)
+      ? soloState.locked.filter(other => other !== id)
+      : [...soloState.locked, id];
+  }
+
+  /**
+   * The one way solo changes: asks for a solo set, of which only the unlocked
+   * entries count; locked entries stay in or out as they are. An empty set
+   * ends solo.
+   */
+  private setSolo(requested: readonly number[], primaryId: number | null): void {
+    const kept = soloState.ids.filter(id => this.isLocked(id));
+    const ids = [...new Set([...requested.filter(id => !this.isLocked(id)), ...kept])];
+    if (!ids.length) {
+      if (this.active) {
+        soloState.ids = [];
+        soloState.primaryId = null;
+        this.settle();
+      }
+      return;
+    }
+    this.begin();
+    soloState.ids = ids;
+    soloState.primaryId =
+      primaryId !== null && ids.includes(primaryId)
+        ? primaryId
+        : (ids.filter(id => !this.isLocked(id)).at(-1) ?? ids[ids.length - 1]);
+    this.apply();
+  }
+
+  /** Soloed entries that are not locked: what solo actions change. */
+  private freeSoloIds(): number[] {
+    return soloState.ids.filter(id => !this.isLocked(id));
+  }
+
   /** The user's own visibility setting, which the layers leave untouched. */
   baseVisible(entry: FileEntry): boolean {
     if (this.layered && entry.id in soloState.saved) {
@@ -311,33 +411,32 @@ export class SoloController {
   // ---- solo ----------------------------------------------------------------
 
   soloExclusive(id: number): void {
-    if (soloState.ids.length === 1 && soloState.ids[0] === id) {
-      this.exit();
+    if (this.isLocked(id)) {
       return;
     }
-    this.begin();
-    soloState.ids = [id];
-    soloState.primaryId = id;
-    this.apply();
+    const free = this.freeSoloIds();
+    // Again on the only (free) soloed entry: unsolo it.
+    this.setSolo(free.length === 1 && free[0] === id ? [] : [id], id);
   }
 
   toggleAdditive(id: number): void {
-    if (this.isSoloed(id)) {
-      const ids = soloState.ids.filter(other => other !== id);
-      if (!ids.length) {
-        this.exit();
-        return;
-      }
-      soloState.ids = ids;
-      if (soloState.primaryId === id) {
-        soloState.primaryId = ids[ids.length - 1];
-      }
-    } else {
-      this.begin();
-      soloState.ids = [...soloState.ids, id];
-      soloState.primaryId = id;
+    if (this.isLocked(id)) {
+      return;
     }
-    this.apply();
+    const free = this.freeSoloIds();
+    this.setSolo(
+      this.isSoloed(id) ? free.filter(other => other !== id) : [...free, id],
+      this.isSoloed(id) ? soloState.primaryId : id
+    );
+  }
+
+  /** A click on an entry's solo control: Ctrl/Cmd/Shift adds or removes, else solos it alone. */
+  click(id: number, event: { ctrlKey: boolean; metaKey: boolean; shiftKey: boolean }): void {
+    if (event.ctrlKey || event.metaKey || event.shiftKey) {
+      this.toggleAdditive(id);
+    } else {
+      this.soloExclusive(id);
+    }
   }
 
   soloNth(n: number, additive: boolean): void {
@@ -353,7 +452,8 @@ export class SoloController {
   }
 
   step(delta: number): void {
-    const list = this.soloable();
+    // Locked entries keep their state, so stepping passes over them.
+    const list = this.soloable().filter(entry => !this.isLocked(entry.id));
     if (!list.length) {
       return;
     }
@@ -365,20 +465,21 @@ export class SoloController {
           : list.length - 1
         : (current + delta + list.length) % list.length;
     const id = list[next].id;
-    this.begin();
-    soloState.ids = [id];
-    soloState.primaryId = id;
-    this.apply();
+    this.setSolo([id], id);
   }
 
-  /** Ends solo; the group scope (if any) stays. */
+  /**
+   * Ends solo; the group scope (if any) stays. Entries locked as soloed stay
+   * soloed, so solo goes on with just them until they are unlocked.
+   */
   exit(): void {
     if (!this.active) {
       return;
     }
-    soloState.ids = [];
-    soloState.primaryId = null;
-    this.settle();
+    this.setSolo([], null);
+    if (this.active) {
+      this.host.showStatus('Locked files stay soloed; unlock them to end solo');
+    }
   }
 
   // ---- layer bookkeeping ---------------------------------------------------
@@ -414,6 +515,9 @@ export class SoloController {
     const ids = soloState.ids.filter(id => present.has(id));
     if (ids.length !== soloState.ids.length) {
       soloState.ids = ids;
+    }
+    if (soloState.locked.some(id => !present.has(id))) {
+      soloState.locked = soloState.locked.filter(id => present.has(id));
     }
     if (soloState.primaryId !== null && !present.has(soloState.primaryId)) {
       soloState.primaryId = ids[ids.length - 1] ?? null;
@@ -486,7 +590,7 @@ export class SoloController {
     }
     this.host.fileEntries.all.forEach((entry, index) => {
       const own = entry.id in soloState.saved ? soloState.saved[entry.id] : true;
-      const visible = this.inScope(entry) && (this.active ? this.shownBySolo(entry) : own);
+      const visible = this.inScope(entry) && own && (!this.active || this.shownBySolo(entry));
       if ((entry.state.visible ?? true) !== visible) {
         this.host.setFileEntryVisibility(index, visible);
       }
@@ -496,6 +600,21 @@ export class SoloController {
 
   /** Keyboard bindings; installed once per viewer. */
   installShortcuts(): void {
+    // Full paths change what the group regex matches.
+    let fullPaths = fileNameOptions.fullPaths;
+    window.addEventListener(
+      'file-name-options',
+      () => {
+        if (fileNameOptions.fullPaths === fullPaths) {
+          return;
+        }
+        fullPaths = fileNameOptions.fullPaths;
+        if (fileGroupsState.enabled) {
+          this.refreshScope();
+        }
+      },
+      { signal: this.host.lifetime.signal }
+    );
     this.host.lifetime.listen(document, 'keydown', (event: KeyboardEvent) => {
       const target = event.target;
       if (

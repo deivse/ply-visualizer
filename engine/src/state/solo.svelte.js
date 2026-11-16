@@ -4,9 +4,12 @@
 // so every renderer/picker that reads it stays correct without knowing about
 // solo. Keyed by stable entry id, never by index.
 export const soloState = $state(
-  /** @type {{ ids: number[]; primaryId: number | null; saved: Record<number, boolean>; layered: boolean; scopeIds: number[] | null }} */ ({
+  /** @type {{ ids: number[]; primaryId: number | null; locked: number[]; saved: Record<number, boolean>; layered: boolean; scopeIds: number[] | null }} */ ({
     ids: [],
     primaryId: null,
+    // Locked entries: their membership in `ids` (soloed or not) is frozen
+    // until unlocked. `ids` stays the only record of what is soloed.
+    locked: [],
     // Own visibility of every entry while any layer (solo or scene scope) is
     // active; `entry.state.visible` is then the effective visibility.
     saved: {},
@@ -47,9 +50,24 @@ function loadLayout() {
 /** Panel presentation; remembered per viewer installation. */
 export const soloLayout = $state(loadLayout());
 
+let abbreviateSeeded = false;
+
+/**
+ * The panel's own a…z starts as the file list's, the first time the panel
+ * appears in this window; after that the two are independent.
+ * @param {boolean} fileListAbbreviate
+ */
+export function seedSoloAbbreviate(fileListAbbreviate) {
+  if (abbreviateSeeded) return;
+  abbreviateSeeded = true;
+  soloLayout.abbreviate = fileListAbbreviate;
+}
+
 export function saveSoloLayout() {
   try {
-    localStorage.setItem(LAYOUT_KEY, JSON.stringify(soloLayout));
+    // a…z is not remembered: it is seeded from the file list each time.
+    const { abbreviate: _seeded, ...layout } = soloLayout;
+    localStorage.setItem(LAYOUT_KEY, JSON.stringify(layout));
   } catch {
     // Storage may be unavailable (private window, webview policy); layout
     // then simply resets next time.

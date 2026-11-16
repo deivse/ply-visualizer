@@ -85,6 +85,21 @@ export interface SpatialData {
   splatSource?: { url?: string; bytes?: Uint8Array };
   fileName?: string;
   shortPath?: string; // parent/grandparent/filename for tooltip display
+  /** Absolute path on disk, where the host knows it (desktop app). */
+  filePath?: string;
+  /**
+   * `fileName` was changed with "Rename in viewer": it is the name everywhere
+   * (also where the full path would show), and the old one is not offered.
+   */
+  nameOverridden?: boolean;
+  /**
+   * How the file was opened, so a later session can open it the same way:
+   * the name it came with (a path inside an opened folder keeps its folder
+   * part, which grouping may use) and its point count before any
+   * subsampling (at load or later), so the same share can be kept again.
+   */
+  sourceName?: string;
+  pointsBeforeSubsample?: number;
   fileIndex?: number;
   fileSizeInBytes?: number;
   positionsArray?: Float32Array;

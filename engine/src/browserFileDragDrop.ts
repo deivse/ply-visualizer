@@ -538,6 +538,24 @@ export interface BrowserLoadOptions {
   subsample?: SubsampleOptions;
 }
 
+/**
+ * Absolute path of a file on disk, where the host knows it: files the desktop
+ * app opens carry it, and its bridge resolves files from drops and the file
+ * input. Empty in a browser.
+ */
+function diskPathOf(file: File): string {
+  const known = (file as File & { path?: unknown }).path;
+  if (typeof known === 'string' && known) {
+    return known;
+  }
+  const bridge = (globalThis as { plyDesktop?: { pathForFile?: (file: File) => string } })
+    .plyDesktop;
+  if (file instanceof File && bridge?.pathForFile) {
+    return bridge.pathForFile(file) || '';
+  }
+  return '';
+}
+
 export async function handleBrowserFiles(
   host: BrowserFileDragDropHost,
   files: File[],
@@ -545,6 +563,27 @@ export async function handleBrowserFiles(
 ): Promise<void> {
   console.log(`🌐 Loading ${files.length} files in browser...`);
   host.showImmediateLoading({ fileName: `${files.length} files`, pointCount: 0 });
+  // Name -> path on disk, recorded on whatever each file becomes.
+  const diskPaths = new Map<string, string>();
+  for (const file of files) {
+    const filePath = diskPathOf(file);
+    if (filePath) {
+      diskPaths.set(file.name, filePath);
+    }
+  }
+  if (diskPaths.size) {
+    (
+      globalThis as { plyDesktop?: { filesAdded?: (paths: string[]) => void } }
+    ).plyDesktop?.filesAdded?.([...diskPaths.values()]);
+  }
+  const recordPath = (data: SpatialData, name = data.fileName) => {
+    const filePath = name ? diskPaths.get(name) : undefined;
+    if (filePath && !data.filePath) {
+      data.filePath = filePath;
+      data.sourceName = name;
+      data.pointsBeforeSubsample ??= data.vertexCount;
+    }
+  };
 
   try {
     const modelFiles = files.filter(file => isSceneModel(file.name));
@@ -554,6 +593,7 @@ export async function handleBrowserFiles(
         fileName: file.name,
         files,
       });
+      recordPath(model as SpatialData, file.name);
       await host.displayFiles([model]);
     }
     if (modelFiles.length) {
@@ -717,6 +757,7 @@ export async function handleBrowserFiles(
         if (dims) {
           (data as any).depthDimensions = dims;
         }
+        recordPath(data, depthFile.name);
         const localIndex = spatialDataArray.length;
         spatialDataArray.push(data);
         depthMetaRecords.push({
@@ -767,12 +808,16 @@ export async function handleBrowserFiles(
       if (options.subsample) {
         for (const data of spatialDataArray) {
           const result = await subsampleSpatialData(data, options.subsample);
+          data.pointsBeforeSubsample = result.of;
           console.log(
             result.subsampled
               ? `✂️ ${data.fileName}: kept ${result.kept.toLocaleString()} of ${result.of.toLocaleString()} points`
               : `✂️ ${data.fileName}: not subsampled${result.reason ? ` (${result.reason})` : ''}`
           );
         }
+      }
+      for (const data of spatialDataArray) {
+        recordPath(data);
       }
       await host.displayFiles(spatialDataArray);
 

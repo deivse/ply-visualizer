@@ -1,4 +1,5 @@
 <script lang="ts">
+  import Disclosure from './Disclosure.svelte';
   import {
     isCameraFrameImageVisible,
     listCameraFrames,
@@ -120,16 +121,14 @@
 </script>
 
 <div class="camera-frame-list" style="margin-top:2px;font-size:10px;">
-  <button
-    type="button"
+  <Disclosure
     class="camera-frame-disclosure"
     style={DISCLOSURE}
-    aria-expanded={expanded}
-    onclick={toggleExpanded}
+    open={expanded}
+    ontoggle={toggleExpanded}
+    >Individual cameras ({cameraGroup.userData.cameraCount ??
+      cameraGroup.children.length})</Disclosure
   >
-    {expanded ? '▾' : '▸'} Individual cameras ({cameraGroup.userData.cameraCount ??
-      cameraGroup.children.length})
-  </button>
 
   {#if expanded}
     {#each frames.slice(0, shown) as frame, frameIndex (frame.name)}
@@ -137,16 +136,14 @@
         class="camera-frame-row"
         style="display:flex;align-items:center;gap:6px;padding-left:10px;"
       >
-        <button
-          type="button"
+        <Disclosure
           class="camera-frame-name"
           style={NAME_BUTTON}
           title="Show calibration details"
-          onclick={() => (openFrame = openFrame === frameIndex ? -1 : frameIndex)}
+          open={openFrame === frameIndex}
+          ontoggle={() => (openFrame = openFrame === frameIndex ? -1 : frameIndex)}
+          >{frame.name}</Disclosure
         >
-          {openFrame === frameIndex ? '▾' : '▸'}
-          {frame.name}
-        </button>
         {#if frame.hasImagePlane}
           <input
             type="checkbox"

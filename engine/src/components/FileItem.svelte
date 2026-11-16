@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { onDestroy } from 'svelte';
   import { longPressFileReorder } from './longPressFileReorder';
   import type { FileItemHost, FileRow } from './fileListTypes';
   import ModelAnimationPanel from './ModelAnimationPanel.svelte';
@@ -18,6 +19,13 @@
   import DepthSettingsPanel from './DepthSettingsPanel.svelte';
   import TransformSection from './TransformSection.svelte';
   import VolumePanel from './VolumePanel.svelte';
+  import { fitName } from '../utils/fitName';
+  import SliderField from './SliderField.svelte';
+  import { aliasOf, setAlias, nameEdit, startNameEdit } from '../state/fileAliases.svelte';
+  import { entryName } from '../utils/entryNames';
+  import { pointSizeTargets } from '../utils/pointSizeTargets';
+  import { pointSizeSliderMax as sliderMaxFor } from '../utils/pointSizeRange';
+  import type { FileLabel } from './fileListTypes';
   import {
     setStonexImageDistortion,
     setStonexImagesVisible,
@@ -29,7 +37,16 @@
     type StonexColorCorrection,
   } from '../visualization/stonexColorCorrection';
 
-  let { host, row }: { host: FileItemHost; row: FileRow } = $props();
+  let {
+    host,
+    row,
+    label = null,
+  }: {
+    host: FileItemHost;
+    row: FileRow;
+    /** Name as the file list shows it (full path, abbreviation); else `name`. */
+    label?: FileLabel | null;
+  } = $props();
   ensureKeyboardModifierTracking();
   const index = $derived(row.index);
   const kind = $derived(row.kind);
@@ -59,16 +76,63 @@
       : (row.entry.state.visible ?? true),
   );
   const soloed = $derived(soloState.ids.includes(row.entry.id));
-  const hiddenBySolo = $derived(soloActive && !(row.entry.state.visible ?? true));
+  const locked = $derived(soloState.locked.includes(row.entry.id));
+  // Hidden by solo, not by its own checkbox.
+  const hiddenBySolo = $derived(soloActive && visible && !(row.entry.state.visible ?? true));
   const canSolo = $derived(row.entry.parentId === null && !!host.solo);
+
+  const busyProgress = $derived(fileBusy.byId[row.entry.id]);
+  const busy = $derived(busyProgress !== undefined);
+  // ---- alias / rename in viewer (state/fileAliases) ----
+  /** Clouds and poses can be given an alias or renamed; cameras have profiles. */
+  const canName = $derived(row.kind !== 'camera' && !busy);
+  const editing = $derived(nameEdit.id === row.entry.id && canName);
+
+  /** The inline name field: Enter or leaving it saves, Esc cancels. */
+  function nameEditor(node: HTMLInputElement) {
+    const mode = nameEdit.mode;
+    const entry = row.entry;
+    let done = false;
+    const finish = (save: boolean) => {
+      if (done) return;
+      done = true;
+      const text = node.value.trim();
+      if (nameEdit.id === entry.id) nameEdit.id = null;
+      if (!save) return;
+      if (mode === 'alias') {
+        // An alias equal to the name is no alias.
+        setAlias(entry, text === name ? null : text);
+      } else if (text && text !== name) {
+        host.solo.renameInViewer(entry, text);
+      }
+    };
+    const onKey = (event: KeyboardEvent) => {
+      // Typing belongs to the field, not to solo keys or the card.
+      event.stopPropagation();
+      if (event.key === 'Enter') {
+        event.preventDefault();
+        finish(true);
+      } else if (event.key === 'Escape') {
+        event.preventDefault();
+        finish(false);
+      }
+    };
+    const onBlur = () => finish(true);
+    node.addEventListener('keydown', onKey);
+    node.addEventListener('blur', onBlur);
+    node.focus();
+    node.select();
+    return {
+      destroy() {
+        node.removeEventListener('keydown', onKey);
+        node.removeEventListener('blur', onBlur);
+      },
+    };
+  }
 
   function onSoloClick(e: MouseEvent) {
     e.stopPropagation();
-    if (e.ctrlKey || e.metaKey || e.shiftKey) {
-      host.solo.toggleAdditive(row.entry.id);
-    } else {
-      host.solo.soloExclusive(row.entry.id);
-    }
+    host.solo.click(row.entry.id, e);
   }
   const collapsed = $derived(row.entry.state.collapsed ?? false);
   const colorMode = $derived(row.entry.state.colorMode ?? 'assigned');
@@ -163,8 +227,6 @@
 
   const selected = $derived(fileSelection.ids.includes(row.entry.id));
   // A long-running action (subsampling) is working on this entry: 0..1.
-  const busyProgress = $derived(fileBusy.byId[row.entry.id]);
-  const busy = $derived(busyProgress !== undefined);
 
   // Controls inside a card keep their own clicks and context menus.
   const INTERACTIVE =
@@ -184,8 +246,28 @@
     if (window.getSelection()?.toString()) {
       return;
     }
-    clickSelect(row.entry.id, { toggle: event.ctrlKey || event.metaKey, range: event.shiftKey });
+    const mode = { toggle: event.ctrlKey || event.metaKey, range: event.shiftKey };
+    // A click on the name may be the first of a double-click (edit the
+    // alias): select only once no second click has come, so a double-click
+    // never selects and nothing moves under the pointer between its clicks.
+    if (canName && target?.closest('.file-name')) {
+      clearTimeout(pendingSelect);
+      pendingSelect = undefined;
+      if (event.detail < 2) {
+        pendingSelect = setTimeout(() => {
+          pendingSelect = undefined;
+          clickSelect(row.entry.id, mode);
+        }, DOUBLE_CLICK_MS);
+      }
+      return;
+    }
+    clickSelect(row.entry.id, mode);
   }
+
+  /** How long a click on a name waits for a second one. */
+  const DOUBLE_CLICK_MS = 350;
+  let pendingSelect: ReturnType<typeof setTimeout> | undefined;
+  onDestroy(() => clearTimeout(pendingSelect));
 
   function onContextMenu(event: MouseEvent) {
     if (busy) {
@@ -289,51 +371,6 @@
     return Number(value.toPrecision(6)).toString();
   }
 
-  function syncMaxSplatSizeControls(value: number) {
-    const slider = document.getElementById(`max-splat-size-${index}`) as HTMLInputElement | null;
-    const input = document.getElementById(
-      `max-splat-size-value-${index}`,
-    ) as HTMLInputElement | null;
-    if (slider) {
-      slider.value = String(host.splatMode.getMaxSplatSizeSlider(index));
-    }
-    if (input) {
-      input.value = formatSplatSize(value);
-    }
-  }
-
-  function onMaxSplatSizeSliderInput(e: Event) {
-    const value = host.splatMode?.setMaxSplatSizeSlider(
-      index,
-      parseFloat((e.target as HTMLInputElement).value),
-    );
-    if (value !== undefined) {
-      syncMaxSplatSizeControls(value);
-    }
-  }
-
-  function onMaxSplatSizeCommit(e: Event) {
-    const input = e.target as HTMLInputElement;
-    const parsed = parseFloat(input.value);
-    const value =
-      Number.isFinite(parsed) && parsed > 0
-        ? host.splatMode.setMaxSplatSizeValue(index, parsed)
-        : host.splatMode.getMaxSplatSizeValue(index);
-    syncMaxSplatSizeControls(value);
-  }
-
-  function onMaxSplatSizeKeydown(e: KeyboardEvent) {
-    if (e.key === 'Enter') {
-      onMaxSplatSizeCommit(e);
-      (e.target as HTMLInputElement).blur();
-    }
-  }
-
-  function onMaxSplatSizeReset(e: MouseEvent) {
-    e.preventDefault();
-    syncMaxSplatSizeControls(host.splatMode.resetMaxSplatSize(index));
-  }
-
   const recommendedPointSize = $derived(
     kind === 'pointcloud' &&
       typeof (data as any)?.metadata?.recommendedPointSize === 'number' &&
@@ -349,7 +386,7 @@
         : row.entry.state.pointSize || recommendedPointSize,
   );
   const sizePrecision = $derived(kind === 'pose' ? 3 : kind === 'camera' ? 1 : 4);
-  const pointSizeSliderMax = $derived(Math.max(0.1, recommendedPointSize * 4));
+  const pointSizeSliderMax = $derived(sliderMaxFor(recommendedPointSize));
 
   function defaultPointSize(): number {
     return kind === 'pose' ? 0.02 : kind === 'camera' ? 1.0 : recommendedPointSize;
@@ -357,37 +394,31 @@
 
   let sizeShiftToAll = false;
 
-  function setPointSizeForIndex(fileIndex: number, value: number) {
-    host.updatePointSize(fileIndex, value);
-
-    const slider = document.getElementById(`size-${fileIndex}`) as HTMLInputElement | null;
-    const input = document.getElementById(`size-input-${fileIndex}`) as HTMLInputElement | null;
-    if (slider) slider.value = String(value);
-    if (input) input.value = value.toFixed(sizePrecision);
-  }
-
   function setPointSize(value: number, applyToAll = false) {
-    if (applyToAll && kind === 'pointcloud') {
-      for (let fileIndex = 0; fileIndex < host.spatialFiles.length; fileIndex++) {
-        const fileData = host.spatialFiles[fileIndex];
-        if (
-          fileData &&
-          fileData.metadata?.volumeRenderMode !== 'voxels' &&
-          !host.splatMode?.isActive(fileIndex)
-        ) {
-          setPointSizeForIndex(fileIndex, value);
-        }
-      }
-    } else {
-      setPointSizeForIndex(index, value);
+    for (const fileIndex of applyToAll && kind === 'pointcloud' ? pointSizeTargets(host) : [index]) {
+      host.updatePointSize(fileIndex, value);
     }
     host.requestRender();
   }
 
-  function onSizeSliderInput(e: Event) {
-    const newSize = parseFloat((e.target as HTMLInputElement).value);
-    setPointSize(newSize, sizeShiftToAll);
-  }
+  /** The size field's behaviour (SliderField); the same for every kind. */
+  const sizeField = {
+    format: (value: number) => value.toFixed(sizePrecision),
+    onslide: (value: number) => {
+      setPointSize(value, sizeShiftToAll);
+      return value;
+    },
+    oncommit: (value: number) => {
+      if (!(value > 0)) return undefined;
+      setPointSize(value);
+      return value;
+    },
+    onreset: () => {
+      const value = defaultPointSize();
+      setPointSize(value);
+      return value;
+    },
+  };
 
   function onSizeSliderPointerDown(e: PointerEvent) {
     sizeShiftToAll = kind === 'pointcloud' && e.shiftKey;
@@ -395,33 +426,6 @@
 
   function onSizeSliderPointerEnd() {
     sizeShiftToAll = false;
-  }
-
-  function onSizeSliderReset(e: MouseEvent) {
-    e.preventDefault();
-    setPointSize(defaultPointSize());
-  }
-
-  function onSizeInputCommit(e: Event) {
-    const input = e.target as HTMLInputElement;
-    const newSize = parseFloat(input.value);
-    if (!isNaN(newSize) && newSize > 0) {
-      setPointSize(newSize);
-    } else {
-      const currentSize = row.entry.state.pointSize || defaultPointSize();
-      input.value = currentSize.toFixed(sizePrecision);
-    }
-  }
-
-  function onSizeInputKeydown(e: KeyboardEvent) {
-    if (e.key === 'Enter') {
-      onSizeInputCommit(e);
-      (e.target as HTMLInputElement).blur();
-    }
-  }
-
-  function onSizeInputFocus(e: Event) {
-    (e.target as HTMLInputElement).select();
   }
 
   const isObjFile = $derived(kind === 'pointcloud' && (data as any)?.isObjFile);
@@ -565,16 +569,18 @@
     return str;
   });
 
+  // The plain name (utils/entryNames); the list passes `label` for the shown
+  // form (full path, abbreviation). Cameras add their icon here.
   const name = $derived(
-    kind === 'pointcloud'
-      ? data?.fileName || `File ${index + 1}`
-      : kind === 'pose'
-        ? meta?.fileName || `Pose ${poseIndex + 1}`
-        : `📷 ${cameraProfileName}`,
+    kind === 'camera'
+      ? `📷 ${cameraProfileName}`
+      : (filesState.entries, entryName(row.entry, host.fileEntries, false).text),
   );
   const shortPath = $derived(
     kind === 'pointcloud'
-      ? data?.shortPath || data?.fileName || ''
+      ? data?.nameOverridden
+        ? data.fileName || ''
+        : data?.filePath || data?.shortPath || data?.fileName || ''
       : kind === 'pose'
         ? (meta as any)?.shortPath || meta?.fileName || ''
         : cameraProfileName,
@@ -638,26 +644,93 @@
       <button
         class="solo-toggle"
         class:lit={soloed}
+        class:locked
+        disabled={locked}
         title="Solo (only show this). Ctrl/Shift-click: add to solo"
         aria-pressed={soloed}
         onclick={onSoloClick}>S</button
       >
+      <button
+        class="solo-lock"
+        class:lit={locked}
+        title={locked
+          ? `Locked ${soloed ? 'in' : 'out of'} solo. Click to unlock`
+          : `Lock: keep this ${soloed ? 'in' : 'out of'} solo while soloing other files`}
+        aria-label="Lock in solo"
+        aria-pressed={locked}
+        onclick={(e: MouseEvent) => {
+          e.stopPropagation();
+          host.solo.toggleLock(row.entry.id);
+        }}
+        ><svg viewBox="0 0 10 12" width="8" height="10" aria-hidden="true"
+          ><path
+            d={locked ? 'M2.5 5.5V3.5a2.5 2.5 0 0 1 5 0v2' : 'M2.5 5.5V3.5a2.5 2.5 0 0 1 5 0'}
+            fill="none"
+            stroke="currentColor"
+            stroke-width="1.4"
+          /><rect x="1" y="5.5" width="8" height="6" rx="1" fill="currentColor" /></svg
+        ></button
+      >
     {/if}
     <span class="color-indicator" style={colorIndicatorStyle()}></span>
-    <span
-      class="file-name"
-      role="button"
-      tabindex="0"
-      aria-pressed={selected}
-      data-short-path={shortPath}
-      onkeydown={(event: KeyboardEvent) => {
-        if (event.key === 'Enter' || event.key === ' ') {
+    {#if editing}
+      <!-- The alias (blue) or, with Shift, the name itself ("Rename in viewer"). -->
+      <input
+        class="file-name-edit"
+        class:alias={nameEdit.mode === 'alias'}
+        type="text"
+        spellcheck="false"
+        autocomplete="off"
+        value={nameEdit.mode === 'alias' ? (aliasOf(row.entry) ?? name) : name}
+        placeholder={nameEdit.mode === 'alias' ? 'Alias (empty: none)' : 'Name in viewer'}
+        aria-label={nameEdit.mode === 'alias' ? `Alias for ${name}` : `Rename ${name} in viewer`}
+        title={nameEdit.mode === 'alias'
+          ? 'Alias: shown instead of the name; grouping still uses the name. Enter: save · Esc: cancel · empty: no alias'
+          : 'Rename in viewer: the name used for display and grouping in this window. The file on disk is not renamed. Enter: save · Esc: cancel'}
+        use:nameEditor
+      />
+    {:else}
+      <span
+        class="file-name"
+        class:aliased={label?.aliased}
+        role="button"
+        tabindex="0"
+        aria-pressed={selected}
+        data-short-path={shortPath}
+        data-full-name={label?.full ?? name}
+        use:fitName={label ?? { full: name, short: name, enabled: false }}
+        ondblclick={(event: MouseEvent) => {
+          if (!canName) return;
           event.preventDefault();
-          event.stopPropagation();
-          clickSelect(row.entry.id, { toggle: event.ctrlKey || event.metaKey, range: event.shiftKey });
-        }
-      }}>{name}</span
-    >
+          startNameEdit(row.entry.id, event.shiftKey ? 'rename' : 'alias');
+        }}
+        onkeydown={(event: KeyboardEvent) => {
+          if (event.key === 'Enter' || event.key === ' ') {
+            event.preventDefault();
+            event.stopPropagation();
+            clickSelect(row.entry.id, { toggle: event.ctrlKey || event.metaKey, range: event.shiftKey });
+          } else if (event.key === 'F2' && canName) {
+            event.preventDefault();
+            startNameEdit(row.entry.id, event.shiftKey ? 'rename' : 'alias');
+          }
+        }}></span
+      >
+      {#if label?.hasAlias}
+        <button
+          class="alias-flip"
+          class:original={!label.aliased}
+          aria-pressed={!label.aliased}
+          aria-label="Show original name"
+          title={label.aliased
+            ? `Alias of ${name} - click to show the original name`
+            : `Has the alias "${aliasOf(row.entry)}" - click to show it`}
+          onclick={(event: MouseEvent) => {
+            event.stopPropagation();
+            row.entry.state.showOriginalName = !row.entry.state.showOriginalName;
+          }}>⇄</button
+        >
+      {/if}
+    {/if}
     <button class="remove-file" data-file-index={index} title={removeTitle} onclick={onRemove}
       >✕</button
     >
@@ -693,66 +766,44 @@
       </div>
 
       {#if canRenderSplats && splatActive}
-        <div class="point-size-control max-splat-size-control" style="margin-top: 4px;">
-          <label for={`max-splat-size-${index}`} style="font-size: 11px;">Max splat size:</label>
-          <input
-            type="range"
-            id={`max-splat-size-${index}`}
-            min="0"
-            max="100"
-            step="0.1"
-            value={host.splatMode.getMaxSplatSizeSlider(index)}
-            class="size-slider"
-            title="Logarithmic scale from 0.01; double-click to reset"
-            style="width: 100%;"
-            oninput={onMaxSplatSizeSliderInput}
-            ondblclick={onMaxSplatSizeReset}
-          />
-          <input
-            type="text"
-            id={`max-splat-size-value-${index}`}
-            class="size-input"
-            value={formatSplatSize(host.splatMode.getMaxSplatSizeValue(index))}
-            title="Exact maximum size in scene units"
-            aria-label="Maximum splat size in scene units"
-            style="font-size: 10px; width: 64px; border: none; background: transparent; color: var(--vscode-foreground); text-align: left; padding: 0; margin: 0; outline: none; cursor: text;"
-            onblur={onMaxSplatSizeCommit}
-            onkeydown={onMaxSplatSizeKeydown}
-            onfocus={(e) => (e.target as HTMLInputElement).select()}
-          />
-        </div>
+        <SliderField
+          class="point-size-control max-splat-size-control"
+          style="margin-top: 4px;"
+          labelStyle="font-size: 11px;"
+          label="Max splat size:"
+          sliderId={`max-splat-size-${index}`}
+          inputId={`max-splat-size-value-${index}`}
+          value={host.splatMode.getMaxSplatSizeValue(index)}
+          min="0"
+          max="100"
+          step="0.1"
+          toSlider={() => host.splatMode.getMaxSplatSizeSlider(index)}
+          format={formatSplatSize}
+          onslide={(position) => host.splatMode?.setMaxSplatSizeSlider(index, position)}
+          oncommit={(typed) => (typed > 0 ? host.splatMode.setMaxSplatSizeValue(index, typed) : undefined)}
+          onreset={() => host.splatMode.resetMaxSplatSize(index)}
+          sliderTitle="Logarithmic scale from 0.01; double-click to reset"
+          valueTitle="Exact maximum size in scene units"
+          valueLabel="Maximum splat size in scene units"
+          valueWidth={64}
+        />
       {/if}
 
       {#if !splatActive && hasPointSize}
-        <div class="point-size-control" style="margin-top: 4px;">
-          <label for={`size-${index}`} style="font-size: 11px;">Point Size:</label>
-          <input
-            type="range"
-            id={`size-${index}`}
-            min="0.0001"
-            max={pointSizeSliderMax}
-            step="0.0001"
-            value={pointSize}
-            class="size-slider"
-            style="width: 100%;"
-            onpointerdown={onSizeSliderPointerDown}
-            onpointerup={onSizeSliderPointerEnd}
-            onpointercancel={onSizeSliderPointerEnd}
-            oninput={onSizeSliderInput}
-            ondblclick={onSizeSliderReset}
-            title="Double-click to reset"
-          />
-          <input
-            type="text"
-            id={`size-input-${index}`}
-            class="size-input"
-            value={pointSize.toFixed(4)}
-            style="font-size: 10px; width: 30px; border: none; background: transparent; color: var(--vscode-foreground); text-align: left; padding: 0; margin: 0; outline: none; cursor: text;"
-            onblur={onSizeInputCommit}
-            onkeydown={onSizeInputKeydown}
-            onfocus={onSizeInputFocus}
-          />
-        </div>
+        <SliderField
+          {...sizeField}
+          style="margin-top: 4px;"
+          labelStyle="font-size: 11px;"
+          label="Point Size:"
+          sliderId={`size-${index}`}
+          inputId={`size-input-${index}`}
+          value={pointSize}
+          min="0.0001"
+          max={pointSizeSliderMax}
+          step="0.0001"
+          onsliderpointerdown={onSizeSliderPointerDown}
+          onsliderpointerend={onSizeSliderPointerEnd}
+        />
       {/if}
 
       {#if isObjWireframeOrFile}
@@ -882,20 +933,16 @@
         </div>
       </div>
       <TransformSection {host} fileIndex={index} {matrixText} />
-      <div class="point-size-control">
-        <label for={`size-${index}`}>Joint Radius (m):</label>
-        <input type="range" id={`size-${index}`} min="0.001" max="0.1" step="0.001" value={pointSize} class="size-slider" oninput={onSizeSliderInput} ondblclick={onSizeSliderReset} title="Double-click to reset" />
-        <input
-          type="text"
-          id={`size-input-${index}`}
-          class="size-input"
-          value={pointSize.toFixed(3)}
-          style="font-size: 10px; width: 30px; border: none; background: transparent; color: var(--vscode-foreground); text-align: left; padding: 0; margin: 0; outline: none; cursor: text;"
-          onblur={onSizeInputCommit}
-          onkeydown={onSizeInputKeydown}
-          onfocus={onSizeInputFocus}
-        />
-      </div>
+      <SliderField
+        {...sizeField}
+        label="Joint Radius (m):"
+        sliderId={`size-${index}`}
+        inputId={`size-input-${index}`}
+        value={pointSize}
+        min="0.001"
+        max="0.1"
+        step="0.001"
+      />
       <div class="color-control">
         <label for={`color-${index}`}>Color:</label>
         <select id={`color-${index}`} class="color-selector" value={colorMode} onchange={onColorModeChange}>
@@ -1101,20 +1148,19 @@
         {/if}
         <CameraFrameList {host} {cameraGroup} sceneTick={cameraSceneTick} />
       </div>
-      <div class="size-control">
-        <label for={`size-${index}`}>Scale:</label>
-        <input type="range" id={`size-${index}`} min="0.1" max="5.0" step="0.1" value={pointSize} oninput={onSizeSliderInput} ondblclick={onSizeSliderReset} title="Double-click to reset" />
-        <input
-          type="text"
-          id={`size-input-${index}`}
-          class="size-input"
-          value={pointSize.toFixed(1)}
-          style="font-size: 10px; width: 20px; border: none; background: transparent; color: var(--vscode-foreground); text-align: left; padding: 0; margin: 0; outline: none; cursor: text;"
-          onblur={onSizeInputCommit}
-          onkeydown={onSizeInputKeydown}
-          onfocus={onSizeInputFocus}
-        />
-      </div>
+      <SliderField
+        {...sizeField}
+        class="size-control"
+        sliderClass=""
+        label="Scale:"
+        sliderId={`size-${index}`}
+        inputId={`size-input-${index}`}
+        value={pointSize}
+        min="0.1"
+        max="5.0"
+        step="0.1"
+        valueWidth={20}
+      />
       <TransformSection {host} fileIndex={index} {matrixText} matrixOnly variant="transformation" />
     {/if}
   </div>

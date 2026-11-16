@@ -33,6 +33,8 @@
   function readFile(file) {
     return {
       name: file.name,
+      // Absolute path on disk, shown with View → Files → Show Full Paths.
+      path: file.path,
       size: file.size,
       type: '',
       webkitRelativePath: '',
@@ -47,12 +49,17 @@
   }
 
   // Subsampled loading reads, parses and thins one file at a time, so only
-  // one full-size file is ever in memory.
+  // one full-size file is ever in memory. A restored session gives each file
+  // its own share (file.subsample).
   async function loadSubsampled(viewer, files, subsample) {
     for (let i = 0; i < files.length; i++) {
       bridge.setTitle(`Loading ${i + 1}/${files.length}… — PLY Visualizer`);
       try {
-        await viewer.handleBrowserFiles([readFile(files[i])], { subsample });
+        const options = files[i].subsample || subsample;
+        await viewer.handleBrowserFiles(
+          [readFile(files[i])],
+          options ? { subsample: options } : {}
+        );
       } catch (error) {
         console.error(error);
         viewer.showError?.(`Failed to load ${files[i].name}: ${error?.message ?? error}`);
@@ -75,12 +82,18 @@
           viewer.solo.setGroupRegex(folderRegex, true);
         } else if (payload.grouping === 'off') {
           viewer.solo.setGroupingEnabled(false);
+        } else if (payload.grouping && typeof payload.grouping === 'object') {
+          // A restored session's own pattern, and the group it showed: shown
+          // once its files are in, unless another one is picked meanwhile.
+          viewer.solo.setGroupRegex(payload.grouping.regex, payload.grouping.enabled);
+          if (payload.activeGroup) viewer.solo.preferGroup(payload.activeGroup);
         }
-        if (payload.subsample) {
+        if (payload.subsample || payload.files.some(file => file.subsample)) {
           await loadSubsampled(viewer, payload.files, payload.subsample);
         } else {
           await viewer.handleBrowserFiles(payload.files.map(readFile));
         }
+        applySettings(viewer, payload.files);
         if (payload.title) titles.push(payload.title);
         updateTitle();
       })
@@ -88,6 +101,131 @@
         console.error(error);
         window.visualizer?.showError?.(String(error && error.message ? error.message : error));
       });
+  });
+
+  // ---- session: what this window shows, so the host can reopen it --------
+
+  /**
+   * The window's files in list order (path, the name they were opened with,
+   * and the share of points kept if subsampled) and its grouping. Files with
+   * no path on disk (examples, generated data) are not part of it.
+   */
+  function sessionSnapshot(viewer) {
+    const seen = new Set();
+    const files = viewer.fileEntries.all
+      .map((entry, index) => ({ entry, index }))
+      .filter(({ entry }) => entry.parentId === null && entry.spatial?.data?.filePath)
+      .sort(
+        (a, b) =>
+          (a.entry.state.listOrder ?? Number.MAX_SAFE_INTEGER) -
+            (b.entry.state.listOrder ?? Number.MAX_SAFE_INTEGER) || a.index - b.index
+      )
+      .filter(
+        ({ entry }) =>
+          !seen.has(entry.spatial.data.filePath) && seen.add(entry.spatial.data.filePath)
+      )
+      .map(({ entry, index }) => {
+        const data = entry.spatial.data;
+        const share = data.pointsBeforeSubsample
+          ? data.vertexCount / data.pointsBeforeSubsample
+          : 1;
+        return {
+          path: data.filePath,
+          name: data.sourceName || data.fileName,
+          ...(share < 1
+            ? { subsample: { fraction: Math.max(1e-6, Number(share.toPrecision(6))) } }
+            : {}),
+          settings: fileSettings(viewer, entry, index),
+        };
+      });
+    const groups = viewer.solo.groupSettings();
+    return {
+      files,
+      grouping: { enabled: groups.enabled, regex: groups.regex },
+      activeGroup: groups.enabled ? groups.active : null,
+      groupCount: groups.enabled ? groups.count : 0,
+    };
+  }
+
+  const IDENTITY = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1];
+
+  /** A file's own settings, as a session keeps them. */
+  function fileSettings(viewer, entry, index) {
+    const s = entry.state;
+    const matrix = viewer.getTransformationMatrixAsArray(index);
+    return {
+      size: s.pointSize,
+      color: s.colorMode,
+      visible: viewer.solo.baseVisible(entry),
+      collapsed: !!s.collapsed,
+      modes: {
+        points: !!s.pointsVisible,
+        mesh: !!s.solidVisible,
+        wireframe: !!s.wireframeVisible,
+        normals: !!s.normalsVisible,
+        splat: !!s.splatModeActive,
+      },
+      ...(matrix.every((v, i) => Math.abs(v - IDENTITY[i]) < 1e-12) ? {} : { matrix }),
+      soloed: viewer.solo.isSoloed(entry.id),
+      locked: viewer.solo.isLocked(entry.id),
+    };
+  }
+
+  /**
+   * Puts a restored session's settings back on its files once they are
+   * loaded: transform, size, colour, render modes, visibility, collapsed,
+   * then solo and locks (so a lock freezes the restored solo state).
+   */
+  function applySettings(viewer, files) {
+    const byPath = new Map(files.filter(f => f.settings).map(f => [f.path, f.settings]));
+    if (!byPath.size) return;
+    const restored = [];
+    viewer.fileEntries.all.forEach((entry, index) => {
+      const s = entry.parentId === null && byPath.get(entry.spatial?.data?.filePath);
+      if (!s) return;
+      byPath.delete(entry.spatial.data.filePath);
+      restored.push({ entry, s });
+      try {
+        if (s.matrix) viewer.setTransformationMatrixArray(index, s.matrix);
+        if (s.size > 0 && s.size !== entry.state.pointSize) viewer.updatePointSize(index, s.size);
+        if (s.color && s.color !== entry.state.colorMode)
+          viewer.onFileColorModeChange(index, s.color);
+        const m = s.modes || {};
+        const toggle = mode => viewer.toggleUniversalRenderMode(index, mode);
+        if (m.splat && !entry.state.splatModeActive) toggle('splat');
+        for (const [mode, field] of [
+          ['mesh', 'solidVisible'],
+          ['wireframe', 'wireframeVisible'],
+          ['normals', 'normalsVisible'],
+        ]) {
+          if (mode in m && m[mode] !== !!entry.state[field]) toggle(mode);
+        }
+        if (!m.splat && 'points' in m && m.points !== !!entry.state.pointsVisible) toggle('points');
+        if (s.visible === false) viewer.solo.setBaseVisible(entry, false);
+        entry.state.collapsed = !!s.collapsed;
+      } catch (error) {
+        console.error('Could not restore the settings of', entry.spatial?.data?.fileName, error);
+      }
+    });
+    for (const { entry, s } of restored) if (s.soloed) viewer.solo.toggleAdditive(entry.id);
+    for (const { entry, s } of restored) if (s.locked) viewer.solo.toggleLock(entry.id);
+    viewer.requestRender?.();
+  }
+
+  // Reported when it changes; cheap enough to check every second and a half.
+  let lastSession = '';
+  function reportSession() {
+    const viewer = window.visualizer;
+    if (!viewer?.fileEntries || !viewer.solo?.groupSettings) return;
+    const session = sessionSnapshot(viewer);
+    const text = JSON.stringify(session);
+    if (text === lastSession) return;
+    lastSession = text;
+    bridge.reportSession(session);
+  }
+  whenReady().then(() => {
+    reportSession();
+    setInterval(reportSession, 1500);
   });
 
   bridge.onAskSubsample(request => {
@@ -103,6 +241,14 @@
     bridge.reportSoloPanel(event.detail.visible)
   );
   whenReady().then(viewer => bridge.reportSoloPanel(!viewer.solo.panelHidden));
+
+  // View → Files → Show Full Paths / Abbreviate Identical Parts mirror the
+  // options of the file list (also in its right-click menu).
+  bridge.onToggleFileNameOption(key => window.plyFileNames?.toggle(key));
+  window.addEventListener('file-name-options', event => bridge.reportFileNameOptions(event.detail));
+  whenReady().then(() => {
+    if (window.plyFileNames) bridge.reportFileNameOptions(window.plyFileNames.get());
+  });
 
   // "+ Add Point Cloud" keeps working through the page's own file input; the
   // File menu uses native dialogs (files or folders).

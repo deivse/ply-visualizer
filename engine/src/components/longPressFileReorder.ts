@@ -1,6 +1,15 @@
-import { fileRows, type FileItemHost } from './fileListTypes';
+import type { FileItemHost } from './fileListTypes';
+import { moveEntry } from '../utils/reorderEntries';
+import { createDropMarker, REORDER_DRAG_THRESHOLD, REORDER_DRAGGING_CLASS } from './reorderDrag';
 
-/** Hold the file header or its surrounding border/padding; short clicks retain their native behavior. */
+// Pressing one of these and moving does not drag the card; holding still does.
+const CONTROLS = 'button, input, select, textarea, a, label, [role="slider"], [contenteditable]';
+
+/**
+ * Reorders a card: drag its header (name, colour, empty space), or hold the
+ * header or the card's border/padding for a moment and then drag. Short
+ * clicks keep their native behaviour.
+ */
 export function longPressFileReorder(
   node: HTMLElement,
   options: { host: FileItemHost; entryId: number }
@@ -12,6 +21,8 @@ export function longPressFileReorder(
   let y = 0;
   let active = false;
   let suppressClick = false;
+  /** The press is on the header outside its controls: moving starts the drag. */
+  let dragOnMove = false;
   let frame = 0;
   let beforeId: number | null = null;
   let marker: HTMLDivElement | null = null;
@@ -57,22 +68,10 @@ export function longPressFileReorder(
     clearTimeout(timer);
     cancelAnimationFrame(frame);
     if (active && commit) {
-      const entries = fileRows(options.host, options.host.fileEntries.all).map(item => item.entry);
-      const moving = entries.find(entry => entry.id === options.entryId);
-      const remaining = entries.filter(entry => entry.id !== options.entryId);
-      if (moving) {
-        const index =
-          beforeId === null
-            ? remaining.length
-            : remaining.findIndex(entry => entry.id === beforeId);
-        remaining.splice(index < 0 ? remaining.length : index, 0, moving);
-        remaining.forEach((entry, order) => {
-          entry.state.listOrder = order;
-        });
-      }
+      moveEntry(options.host.fileEntries.all, options.entryId, { beforeId });
     }
     active = false;
-    row.style.removeProperty('opacity');
+    row.classList.remove(REORDER_DRAGGING_CLASS);
     node.style.removeProperty('cursor');
     marker?.remove();
     marker = null;
@@ -95,34 +94,37 @@ export function longPressFileReorder(
     pointer = event.pointerId;
     startX = event.clientX;
     startY = y = event.clientY;
-    timer = setTimeout(() => {
-      if (pointer === null) {
-        return;
-      }
-      active = true;
-      suppressClick = true;
-      node.setPointerCapture(pointer);
-      row.style.opacity = '0.55';
-      node.style.cursor = 'grabbing';
-      marker = document.createElement('div');
-      Object.assign(marker.style, {
-        position: 'fixed',
-        height: '2px',
-        background: 'var(--vscode-focusBorder, #3794ff)',
-        pointerEvents: 'none',
-        zIndex: '10000',
-      });
-      document.body.append(marker);
-      paint();
-    }, 400);
+    dragOnMove =
+      event.target instanceof Element &&
+      !!event.target.closest('.file-item-main') &&
+      !event.target.closest(CONTROLS);
+    timer = setTimeout(start, 400);
+  }
+  function start() {
+    clearTimeout(timer);
+    if (pointer === null) {
+      return;
+    }
+    active = true;
+    suppressClick = true;
+    node.setPointerCapture(pointer);
+    row.classList.add(REORDER_DRAGGING_CLASS);
+    node.style.cursor = 'grabbing';
+    marker = createDropMarker();
+    marker.style.height = '2px';
+    paint();
   }
   function move(event: PointerEvent) {
     if (event.pointerId !== pointer) {
       return;
     }
     y = event.clientY;
-    if (!active && Math.hypot(event.clientX - startX, y - startY) > 6) {
-      finish();
+    if (!active && Math.hypot(event.clientX - startX, y - startY) > REORDER_DRAG_THRESHOLD) {
+      if (dragOnMove) {
+        start();
+      } else {
+        finish();
+      }
     }
     if (active) {
       event.preventDefault();
@@ -137,7 +139,11 @@ export function longPressFileReorder(
     finish();
   }
   function key(event: KeyboardEvent) {
-    if (event.key === 'Escape') {
+    if (event.key === 'Escape' && pointer !== null) {
+      // Cancels the drag only; solo's Esc must not fire too.
+      if (active) {
+        event.stopPropagation();
+      }
       finish();
     }
   }
@@ -160,7 +166,7 @@ export function longPressFileReorder(
   window.addEventListener('pointerup', up);
   window.addEventListener('pointercancel', cancel);
   window.addEventListener('blur', cancel);
-  window.addEventListener('keydown', key);
+  window.addEventListener('keydown', key, true);
   return {
     update(value: typeof options) {
       options = value;
@@ -175,7 +181,7 @@ export function longPressFileReorder(
       window.removeEventListener('pointerup', up);
       window.removeEventListener('pointercancel', cancel);
       window.removeEventListener('blur', cancel);
-      window.removeEventListener('keydown', key);
+      window.removeEventListener('keydown', key, true);
     },
   };
 }

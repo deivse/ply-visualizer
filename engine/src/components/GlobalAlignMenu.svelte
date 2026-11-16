@@ -1,4 +1,5 @@
 <script lang="ts">
+  import Disclosure from './Disclosure.svelte';
   import { filesState } from '../state/files.svelte';
   import { measurementState } from '../state/measurement.svelte';
   import { registrationState, stationPipelineUi } from '../state/registration.svelte';
@@ -575,12 +576,11 @@
           <div class="align-message">{stationPipelineUi.message}</div>
         {/if}
 
-        <button
+        <Disclosure
           class="align-disclosure align-options-toggle"
-          onclick={() => (showOptions = !showOptions)}
+          open={showOptions}
+          ontoggle={() => (showOptions = !showOptions)}>Options</Disclosure
         >
-          {showOptions ? '▾' : '▸'} Options
-        </button>
         {#if showOptions}
           <label class="align-check">
             <input type="checkbox" bind:checked={stationPipelineUi.recolorAlreadyColored} />
@@ -641,12 +641,11 @@
     {:else if hasCameraProfiles}
       <!-- The up axis moved beside the align buttons; white balance is all
            that is left here, and only cameras need it. -->
-      <button
+      <Disclosure
           class="align-disclosure align-options-toggle"
-          onclick={() => (showOptions = !showOptions)}
-        >
-        {showOptions ? '▾' : '▸'} Options
-      </button>
+          open={showOptions}
+          ontoggle={() => (showOptions = !showOptions)}>Options</Disclosure
+      >
       {#if showOptions}
         {@render whiteBalanceToggle()}
       {/if}
@@ -656,12 +655,11 @@
          hid a whole-scene decision behind whichever row you happened to open
          and repeated the same controls once per cloud. -->
     <div class="align-single">
-      <button
+      <Disclosure
         class="align-disclosure align-single-toggle"
-        onclick={() => (showSingle = !showSingle)}
+        open={showSingle}
+        ontoggle={() => (showSingle = !showSingle)}>Align single clouds</Disclosure
       >
-        {showSingle ? '▾' : '▸'} Align single clouds
-      </button>
       {#if showSingle}
         <label class="align-check" for="global-align-single-fixed">
           Keep fixed

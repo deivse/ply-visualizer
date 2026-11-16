@@ -1,5 +1,6 @@
 <script lang="ts">
   import Modal from './Modal.svelte';
+  import DialogButton from './DialogButton.svelte';
   import { parseSpaceSeparatedValues } from '../utils/matrix';
 
   let {
@@ -24,38 +25,61 @@
     onClose: () => void;
   } = $props();
 
+  // svelte-ignore state_referenced_locally
+  let text = $state(defaultValue);
+  let error = $state('');
+
   function apply() {
-    const textarea = document.getElementById(inputId) as HTMLTextAreaElement;
-    const values = parseSpaceSeparatedValues(textarea.value);
-    if (values.length === expectedCount) {
-      onApply(values);
-      onClose();
-    } else {
-      alert(errorMessage);
+    const values = parseSpaceSeparatedValues(text);
+    if (values.length !== expectedCount) {
+      error = errorMessage;
+      return;
     }
+    onApply(values);
+    onClose();
   }
 </script>
 
-<Modal {onClose}>
-  <h3 style="margin-top:0;">{title}</h3>
-  <div style="margin-bottom: 15px;">
-    <label for={inputId} style="display:block;margin-bottom:5px;font-weight:bold;">{label}</label>
-    <div style="font-size:11px;color:#666;margin-bottom:8px;">
-      {#each helpLines as line, i (i)}
-        {line}<br />
-      {/each}
-    </div>
-    <textarea
-      id={inputId}
-      placeholder={defaultValue}
-      style="width:100%;height:80px;padding:8px;font-family:monospace;font-size:12px;border:1px solid #ccc;border-radius:4px;resize:vertical;"
-      >{defaultValue}</textarea
-    >
+<Modal {title} onclose={onClose}>
+  <label for={inputId} class="vec-label">{label}</label>
+  <div class="vec-help">
+    {#each helpLines as line, i (i)}
+      {line}<br />
+    {/each}
   </div>
-  <div style="text-align:right;">
-    <button style="margin-right:10px;padding:8px 15px;" onclick={onClose}>Cancel</button>
-    <button style="padding:8px 15px;background:#007acc;color:white;border:none;border-radius:4px;" onclick={apply}
-      >Apply</button
-    >
-  </div>
+  <textarea id={inputId} class="vec-text" rows="4" placeholder={defaultValue} bind:value={text}
+  ></textarea>
+  {#if error}<p class="vec-error" role="alert">{error}</p>{/if}
+  {#snippet footer()}
+    <DialogButton onclick={onClose}>Cancel</DialogButton>
+    <DialogButton primary onclick={apply}>Apply</DialogButton>
+  {/snippet}
 </Modal>
+
+<style>
+  .vec-label {
+    display: block;
+    margin-bottom: 4px;
+    font-weight: 600;
+  }
+  .vec-help {
+    font-size: 11px;
+    color: var(--vscode-descriptionForeground, #999);
+    margin-bottom: 8px;
+  }
+  .vec-text {
+    width: 100%;
+    box-sizing: border-box;
+    padding: 6px 8px;
+    font: 12px var(--vscode-editor-font-family, monospace);
+    background: var(--vscode-input-background);
+    color: var(--vscode-input-foreground);
+    border: 1px solid var(--vscode-input-border, #555);
+    border-radius: 3px;
+    resize: vertical;
+  }
+  .vec-error {
+    margin: 8px 0 0;
+    color: var(--vscode-errorForeground, #f48771);
+  }
+</style>

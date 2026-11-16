@@ -1,4 +1,5 @@
 <script lang="ts">
+  import Disclosure from './Disclosure.svelte';
   import * as THREE from 'three';
   import { createRotationMatrix, parseMatrixInput } from '../utils/matrix';
 
@@ -68,14 +69,13 @@
 {#if variant === 'transformation'}
   <div class="transformation-panel" style="margin-top:8px;">
     <div class="panel-header" style="display:flex;align-items:center;margin-bottom:4px;">
-      <button
+      <Disclosure
         class="toggle-panel transformation-toggle"
         data-file-index={fileIndex}
         style="background:none;border:none;color:var(--vscode-foreground);cursor:pointer;display:flex;align-items:center;gap:4px;padding:2px;font-size:10px;"
-        onclick={toggle}
+        {open}
+        ontoggle={toggle}>Transform Matrix</Disclosure
       >
-        <span class="toggle-icon">{open ? '▼' : '▶'}</span> Transform Matrix
-      </button>
     </div>
     <div
       id={`transformation-panel-${fileIndex}`}
@@ -110,9 +110,9 @@
   </div>
 {:else}
   <div class="transform-section">
-    <button class="transform-toggle" data-file-index={fileIndex} onclick={toggle}>
-      <span class="toggle-icon">{open ? '▼' : '▶'}</span> Transform
-    </button>
+    <Disclosure class="transform-toggle" data-file-index={fileIndex} {open} ontoggle={toggle}
+      >Transform</Disclosure
+    >
     <div id={`transform-panel-${fileIndex}`} class="transform-panel" style="display:{open ? 'block' : 'none'};">
       {#if !matrixOnly}
         <div class="transform-group">

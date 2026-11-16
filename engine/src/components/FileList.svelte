@@ -8,6 +8,10 @@
   import FileGroups from './FileGroups.svelte';
   import FileActions from './FileActions.svelte';
   import { setSelectionOrder } from '../state/fileSelection.svelte';
+  import { fileNameOptions } from '../state/fileNames.svelte';
+  import { smartAbbreviate } from '../utils/smartAbbreviate';
+  import type { EntryLabel } from '../utils/entryNames';
+  import type { FileLabel, FileRow } from './fileListTypes';
 
   let { host }: { host: FileListHost } = $props();
 
@@ -16,6 +20,35 @@
     fileRows(host, filesState.entries).filter((row) => host.solo.inScope(row.entry)),
   );
   const totalEntries = $derived(entryRows.length);
+
+  /** What a row shows (alias or name); cameras keep their own label (FileItem). */
+  function baseName(row: FileRow): EntryLabel | null {
+    return row.kind === 'camera' ? null : host.solo.labelOf(row.entry);
+  }
+
+  // Abbreviation runs over every listed name, so the parts all of them share
+  // collapse (a common folder, prefix or suffix).
+  const labels = $derived.by(() => {
+    const named = entryRows
+      .map((row) => ({ id: row.entry.id, base: baseName(row) }))
+      .filter((item): item is { id: number; base: EntryLabel } => !!item.base);
+    const short = fileNameOptions.abbreviate
+      ? smartAbbreviate(named.map((item) => item.base.text))
+      : named.map((item) => item.base.text);
+    return new Map<number, FileLabel>(
+      named.map((item, i) => [
+        item.id,
+        {
+          full: item.base.text,
+          short: short[i],
+          enabled: fileNameOptions.abbreviate,
+          path: item.base.path,
+          aliased: item.base.aliased,
+          hasAlias: item.base.hasAlias,
+        },
+      ]),
+    );
+  });
 
   const isSequenceFrame = $derived(
     (filesState.entries, host.sequenceMode && host.sequenceFiles.length > 0),
@@ -44,6 +77,7 @@
   $effect(() => {
     filesState.entries;
     totalEntries;
+    labels;
     addTooltipsToTruncatedFilenames();
   });
 </script>
@@ -65,10 +99,7 @@
   <FileGroups {host} />
   <FileActions {host} />
   {#each entryRows as row (row.entry.id)}
-    <FileItem
-      {host}
-      {row}
-    />
+    <FileItem {host} {row} label={labels.get(row.entry.id) ?? null} />
   {/each}
   {#if pendingLoadLabel !== null}
     <div class="file-item file-item-loading">

@@ -1758,6 +1758,13 @@ export class PointCloudVisualizer {
     return transformationMatrix.getTransformationMatrix(this, fileIndex);
   }
 
+  /** Sets a file's transform from `getTransformationMatrixAsArray`'s form (a saved session). */
+  setTransformationMatrixArray(fileIndex: number, elements: readonly number[]): void {
+    if (elements.length === 16 && elements.every(Number.isFinite)) {
+      this.setTransformationMatrix(fileIndex, new THREE.Matrix4().fromArray(elements as number[]));
+    }
+  }
+
   getTransformationMatrixAsArray(fileIndex: number): number[] {
     return transformationMatrix.getTransformationMatrixAsArray(this, fileIndex);
   }

@@ -1,5 +1,6 @@
 <script lang="ts">
   import Modal from './Modal.svelte';
+  import DialogButton from './DialogButton.svelte';
   import { parseSpaceSeparatedValues } from '../utils/matrix';
 
   let {
@@ -28,62 +29,87 @@
     onClose: () => void;
   } = $props();
 
-  function resetToDefault() {
-    const textarea = document.getElementById(inputId) as HTMLTextAreaElement;
-    textarea.value = resetValue;
-  }
+  // svelte-ignore state_referenced_locally
+  let text = $state(defaultValue);
+  // svelte-ignore state_referenced_locally
+  let constraint = $state(
+    radioOptions.find((option) => option.checked)?.value ?? radioOptions[0]?.value ?? '',
+  );
+  let error = $state('');
 
   function apply() {
-    const textarea = document.getElementById(inputId) as HTMLTextAreaElement;
-    const values = parseSpaceSeparatedValues(textarea.value);
-    const constraint = (
-      document.querySelector(`input[name="${radioName}"]:checked`) as HTMLInputElement
-    ).value;
-    if (values.length === 3) {
-      onApply(values, constraint);
-      onClose();
-    } else {
-      alert(errorMessage);
+    const values = parseSpaceSeparatedValues(text);
+    if (values.length !== 3) {
+      error = errorMessage;
+      return;
     }
+    onApply(values, constraint);
+    onClose();
   }
 </script>
 
-<Modal {onClose}>
-  <h3 style="margin-top:0;">{title}</h3>
-  <div style="margin-bottom: 15px;">
-    <label for={inputId} style="display:block;margin-bottom:5px;">{label}</label>
-    <textarea
-      id={inputId}
-      placeholder={defaultValue}
-      style="width:100%;height:60px;padding:8px;font-family:monospace;font-size:12px;border:1px solid #ccc;border-radius:4px;resize:vertical;"
-      >{defaultValue}</textarea
-    >
-  </div>
-  <div style="margin-bottom: 15px;">
-    <span style="display:block;margin-bottom:8px;">Keep constant when changing:</span>
-    <div style="display:flex;gap:15px;align-items:center;">
-      {#each radioOptions as option (option.value)}
-        <label style="display:flex;align-items:center;gap:5px;cursor:pointer;">
-          <input
-            type="radio"
-            name={radioName}
-            value={option.value}
-            checked={option.checked}
-            style="margin:0;"
-          />
-          <span>{option.label}</span>
-        </label>
-      {/each}
-    </div>
-  </div>
-  <div style="text-align:right;">
-    <button
-      style="margin-right:10px;padding:6px 12px;background:#f0f0f0;border:1px solid #ccc;border-radius:4px;font-size:11px;"
-      onclick={resetToDefault}>{resetButtonLabel}</button
-    >
-    <button style="margin-right:10px;padding:8px 15px;" onclick={onClose}>Cancel</button>
-    <button style="padding:8px 15px;background:#007acc;color:white;border:none;border-radius:4px;" onclick={apply}
-      >Apply</button
-    >
-  </div>
+<Modal {title} onclose={onClose}>
+  <label for={inputId} class="vec-label">{label}</label>
+  <textarea id={inputId} class="vec-text" rows="3" placeholder={defaultValue} bind:value={text}
+  ></textarea>
+  <fieldset class="vec-keep">
+    <legend>Keep constant when changing:</legend>
+    {#each radioOptions as option (option.value)}
+      <label>
+        <input type="radio" name={radioName} value={option.value} bind:group={constraint} />
+        {option.label}
+      </label>
+    {/each}
+  </fieldset>
+  {#if error}<p class="vec-error" role="alert">{error}</p>{/if}
+  {#snippet footer()}
+    <DialogButton onclick={() => (text = resetValue)}>{resetButtonLabel}</DialogButton>
+    <span class="vec-spacer"></span>
+    <DialogButton onclick={onClose}>Cancel</DialogButton>
+    <DialogButton primary onclick={apply}>Apply</DialogButton>
+  {/snippet}
 </Modal>
+
+<style>
+  .vec-label {
+    display: block;
+    margin-bottom: 4px;
+    font-weight: 600;
+  }
+  .vec-text {
+    width: 100%;
+    box-sizing: border-box;
+    padding: 6px 8px;
+    font: 12px var(--vscode-editor-font-family, monospace);
+    background: var(--vscode-input-background);
+    color: var(--vscode-input-foreground);
+    border: 1px solid var(--vscode-input-border, #555);
+    border-radius: 3px;
+    resize: vertical;
+  }
+  .vec-keep {
+    border: 0;
+    margin: 12px 0 0;
+    padding: 0;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px 16px;
+  }
+  .vec-keep legend {
+    padding: 0;
+    margin-bottom: 6px;
+  }
+  .vec-keep label {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    cursor: pointer;
+  }
+  .vec-error {
+    margin: 8px 0 0;
+    color: var(--vscode-errorForeground, #f48771);
+  }
+  .vec-spacer {
+    flex: 1;
+  }
+</style>

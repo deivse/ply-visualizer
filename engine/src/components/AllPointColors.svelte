@@ -86,8 +86,7 @@
 
 {#if cloudCount > 1}
   <div
-    class="all-point-colors"
-    style="background-color: var(--vscode-list-hoverBackground); border: 1px solid var(--vscode-sideBar-border); border-radius: 4px; margin-bottom: 8px; padding: 6px 8px; font-size: 11px;"
+    class="all-point-colors file-list-footer"
   >
     <div class="color-control" style="margin: 0;">
       <label for="all-point-colors-select">All Colors:</label>

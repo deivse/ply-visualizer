@@ -1,12 +1,16 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import { filesState } from '../state/files.svelte';
-  import { soloState, soloLayout, saveSoloLayout } from '../state/solo.svelte';
+  import { soloState, soloLayout, saveSoloLayout, seedSoloAbbreviate } from '../state/solo.svelte';
   import { fileGroupsState } from '../state/fileGroups.svelte';
   import type { FileEntry } from '../state/fileEntries';
   import type { SoloController } from '../soloMode';
   import { smartAbbreviate } from '../utils/smartAbbreviate';
-  import { maskPointerInput } from '../utils/pointerMask';
+  import { fitName } from '../utils/fitName';
+  import { soloReorder } from './soloReorder';
+  import { fileNameOptions, FILE_NAME_OPTIONS } from '../state/fileNames.svelte';
+  import ChipButton from './ChipButton.svelte';
+  import { startPointerDrag } from '../utils/pointerDrag';
 
   let { solo, sequenceMode }: { solo: SoloController; sequenceMode: () => boolean } = $props();
 
@@ -27,52 +31,16 @@
     (filesState.entries,
     (items.length >= 2 || (!!groupName && solo.groups().length > 1)) && !sequenceMode()),
   );
-  const names = $derived(items.map(entryName));
+  // Full paths follow the file list's option; abbreviation is this panel's
+  // own (soloLayout.abbreviate), seeded from the file list's (see below).
+  // As in the file list: aliases instead of names (state/fileAliases).
+  const entryNames = $derived(items.map((entry) => solo.labelOf(entry)));
+  const names = $derived(entryNames.map((name) => name.text));
+  $effect(() => {
+    if (show) seedSoloAbbreviate(fileNameOptions.abbreviate);
+  });
   const shortNames = $derived(smartAbbreviate(names));
   const primaryIndex = $derived(items.findIndex((item) => item.id === soloState.primaryId));
-
-  function entryName(entry: FileEntry): string {
-    return (
-      entry.spatial?.data.fileName ??
-      entry.pose?.meta.fileName ??
-      entry.camera?.name ??
-      `Object ${entry.id}`
-    );
-  }
-
-  function onItem(event: MouseEvent, entry: FileEntry) {
-    if (event.ctrlKey || event.metaKey || event.shiftKey) {
-      solo.toggleAdditive(entry.id);
-    } else {
-      solo.soloExclusive(entry.id);
-    }
-  }
-
-  /**
-   * Shows the full name when it fits and the smart abbreviation only when it
-   * does not; CSS ellipsis remains the last resort. Re-checks on resize.
-   */
-  function fitName(node: HTMLElement, params: { full: string; short: string; enabled: boolean }) {
-    let current = params;
-    const fit = () => {
-      node.textContent = current.full;
-      if (current.enabled && current.short !== current.full && node.scrollWidth > node.clientWidth) {
-        node.textContent = current.short;
-      }
-    };
-    const observer = new ResizeObserver(fit);
-    observer.observe(node);
-    fit();
-    return {
-      update(next: typeof params) {
-        current = next;
-        fit();
-      },
-      destroy() {
-        observer.disconnect();
-      },
-    };
-  }
 
   // ---- floating, draggable, resizable panel --------------------------------
   let panel = $state<HTMLDivElement | null>(null);
@@ -105,67 +73,21 @@
 
   function onHeaderPointerDown(event: PointerEvent) {
     if ((event.target as HTMLElement).closest('button')) return;
-    // No text selection or native drag of the header's text (the group name):
-    // on macOS a native drag started here can leave the window ignoring clicks.
-    event.preventDefault();
-    const startX = event.clientX;
-    const startY = event.clientY;
     const origin = { ...rect };
-    const header = event.currentTarget as HTMLElement;
-    header.setPointerCapture(event.pointerId);
-    const unmask = maskPointerInput('move');
-    const move = (e: PointerEvent) => {
-      rect = clampRect({ ...origin, x: origin.x + e.clientX - startX, y: origin.y + e.clientY - startY });
-    };
-    let ended = false;
-    const up = () => {
-      if (ended) return;
-      ended = true;
-      header.removeEventListener('pointermove', move);
-      header.removeEventListener('pointerup', up);
-      header.removeEventListener('pointercancel', up);
-      header.removeEventListener('lostpointercapture', up);
-      unmask();
-      persistRect();
-    };
-    header.addEventListener('pointermove', move);
-    header.addEventListener('pointerup', up);
-    header.addEventListener('pointercancel', up);
-    // Capture can be lost without a pointerup (gestures, focus changes).
-    header.addEventListener('lostpointercapture', up);
+    startPointerDrag(event, {
+      cursor: 'move',
+      onMove: (dx, dy) => (rect = clampRect({ ...origin, x: origin.x + dx, y: origin.y + dy })),
+      onEnd: persistRect,
+    });
   }
 
   function onResizePointerDown(event: PointerEvent) {
-    event.preventDefault();
-    const startX = event.clientX;
-    const startY = event.clientY;
     const origin = { ...rect };
-    const grip = event.currentTarget as HTMLElement;
-    grip.setPointerCapture(event.pointerId);
-    const unmask = maskPointerInput('nwse-resize');
-    const move = (e: PointerEvent) => {
-      rect = clampRect({
-        ...origin,
-        w: origin.w + e.clientX - startX,
-        h: origin.h + e.clientY - startY,
-      });
-    };
-    let ended = false;
-    const up = () => {
-      if (ended) return;
-      ended = true;
-      grip.removeEventListener('pointermove', move);
-      grip.removeEventListener('pointerup', up);
-      grip.removeEventListener('pointercancel', up);
-      grip.removeEventListener('lostpointercapture', up);
-      unmask();
-      persistRect();
-    };
-    grip.addEventListener('pointermove', move);
-    grip.addEventListener('pointerup', up);
-    grip.addEventListener('pointercancel', up);
-    // Capture can be lost without a pointerup (gestures, focus changes).
-    grip.addEventListener('lostpointercapture', up);
+    startPointerDrag(event, {
+      cursor: 'nwse-resize',
+      onMove: (dx, dy) => (rect = clampRect({ ...origin, w: origin.w + dx, h: origin.h + dy })),
+      onEnd: persistRect,
+    });
   }
 
   onMount(() => {
@@ -182,6 +104,9 @@
     soloLayout.columns = Math.min(12, Math.max(1, soloLayout.columns + delta));
     saveSoloLayout();
   }
+  // This panel's own a…z, presented like the file list's.
+  const abbreviateOption = FILE_NAME_OPTIONS.find((option) => option.key === 'abbreviate')!;
+
   function toggleAbbreviate() {
     soloLayout.abbreviate = !soloLayout.abbreviate;
     saveSoloLayout();
@@ -228,12 +153,8 @@
           <span class="solo-cols" title="Columns">{soloLayout.columns}</span>
           <button class="hb" title="More columns" onclick={() => setColumns(1)}>+</button>
         {/if}
-        <button
-          class="hb"
-          class:on={soloLayout.abbreviate}
-          aria-pressed={soloLayout.abbreviate}
-          title="Shorten long names by collapsing the parts all names share"
-          onclick={toggleAbbreviate}>a…z</button
+        <ChipButton on={soloLayout.abbreviate} title={abbreviateOption.title} onclick={toggleAbbreviate}
+          >{abbreviateOption.chip}</ChipButton
         >
         {#if active}
           <button class="hb end-solo" title="End solo (0 or Esc)" onclick={() => solo.exit()}
@@ -255,20 +176,31 @@
       >
         {#each items as entry, i (entry.id)}
           {@const lit = soloState.ids.includes(entry.id)}
+          {@const locked = soloState.locked.includes(entry.id)}
           <button
             class="solo-item"
             class:lit
             class:primary={entry.id === soloState.primaryId}
             class:dim={active && !lit}
-            class:muted={!active && entry.state.visible === false}
-            title={`${names[i]}\nClick: solo · Ctrl/Shift-click: add to solo${i < 9 ? ` · key ${i + 1}` : ''}`}
-            onclick={(e) => onItem(e, entry)}
+            class:locked
+            class:muted={!solo.baseVisible(entry)}
+            title={`${names[i]}${entryNames[i].aliased ? `\nAlias of ${entryNames[i].original}` : ''}\nClick: solo · Ctrl/Shift-click: add to solo · Drag: reorder${i < 9 ? ` · key ${i + 1}` : ''}`}
+            data-entry-id={entry.id}
+            use:soloReorder={{ entryId: entry.id, move: (id, target) => solo.move(id, target) }}
+            onclick={(e) => solo.click(entry.id, e)}
           >
             <span class="solo-key">{i + 1}</span>
             <span
               class="solo-name"
-              use:fitName={{ full: names[i], short: shortNames[i], enabled: soloLayout.abbreviate }}
+              class:aliased={entryNames[i].aliased}
+              use:fitName={{
+                full: names[i],
+                short: shortNames[i],
+                enabled: soloLayout.abbreviate,
+                path: entryNames[i].path,
+              }}
             ></span>
+            {#if locked}<span class="solo-locked" title="Locked: unlock it in the file list to solo it">🔒</span>{/if}
           </button>
         {/each}
       </div>
@@ -350,7 +282,6 @@
   .hb {
     opacity: 0.8;
   }
-  .hb.on,
   .seg button.on {
     background: rgba(127, 127, 127, 0.28);
     opacity: 1;
@@ -403,6 +334,16 @@
   .solo-item.dim {
     opacity: 0.55;
   }
+  /* Locked: its solo state is fixed, so the row does not respond. */
+  .solo-item.locked {
+    opacity: 0.4;
+    cursor: default;
+  }
+  .solo-locked {
+    flex: none;
+    font-size: 9px;
+    opacity: 0.8;
+  }
   .solo-item.muted .solo-name {
     text-decoration: line-through;
     opacity: 0.6;
@@ -428,6 +369,18 @@
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+  }
+  /* A path loses its start, not the file name, when it does not fit. */
+  .solo-name.aliased {
+    color: var(--ply-alias-color, #8cc8ff);
+  }
+  /* On the yellow of a soloed item. */
+  .solo-item.lit .solo-name.aliased {
+    color: #0a3f7a;
+  }
+  .solo-name:global(.fit-path) {
+    direction: rtl;
+    text-align: left;
   }
   .solo-grip {
     position: absolute;

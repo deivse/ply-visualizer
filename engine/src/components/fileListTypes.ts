@@ -1,3 +1,4 @@
+import { compareListOrder } from '../utils/reorderEntries';
 import type * as THREE from 'three';
 import type { SpatialData } from '../interfaces';
 import type { FileEntry, FileEntryRegistry } from '../state/fileEntries';
@@ -70,6 +71,18 @@ export interface FileRow {
   cameraGroup: THREE.Group | null;
   cameraName: string;
 }
+/** A file's name in the list: full text, abbreviation, and whether it is a path. */
+export interface FileLabel {
+  full: string;
+  short: string;
+  enabled: boolean;
+  path: boolean;
+  /** `full` is the entry's alias. */
+  aliased: boolean;
+  /** The entry has an alias (shown or not). */
+  hasAlias: boolean;
+}
+
 export function fileRows(host: FileItemHost, entries: readonly FileEntry[]): FileRow[] {
   return entries
     .map<FileRow>((entry, index) => {
@@ -85,9 +98,5 @@ export function fileRows(host: FileItemHost, entries: readonly FileEntry[]): Fil
         cameraName: entry.camera?.name ?? '',
       };
     })
-    .sort(
-      (a, b) =>
-        (a.entry.state.listOrder ?? Number.MAX_SAFE_INTEGER) -
-          (b.entry.state.listOrder ?? Number.MAX_SAFE_INTEGER) || a.index - b.index
-    );
+    .sort(compareListOrder);
 }

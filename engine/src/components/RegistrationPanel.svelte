@@ -1,4 +1,5 @@
 <script lang="ts">
+  import Disclosure from './Disclosure.svelte';
   import { filesState } from '../state/files.svelte';
   import { registrationState } from '../state/registration.svelte';
   import * as registration from '../registrationFeature';
@@ -106,9 +107,9 @@
 {#if candidates.length > 0}
   <div class="registration-section">
     {#if !embedded}
-      <button class="registration-toggle" data-file-index={fileIndex} onclick={toggle}>
-        <span class="toggle-icon">{open ? '▼' : '▶'}</span> Align one cloud to this one
-      </button>
+      <Disclosure class="registration-toggle" data-file-index={fileIndex} {open} ontoggle={toggle}
+        >Align one cloud to this one</Disclosure
+      >
     {/if}
 
     {#if shown}

@@ -18,8 +18,10 @@ test('long press across the header reorders without activating its controls', as
     .first()
     .click({ modifiers: ['Shift'] });
   const names = page.locator('#file-list .file-name');
+  // A click on a name selects that file (and nothing else changes).
   await names.first().click();
-  await expect(page.locator('#file-0')).not.toBeChecked();
+  await expect(rows.first()).toHaveClass(/selected/);
+  await expect(page.locator('#file-0')).toBeChecked();
 
   // A hold on the remove button is a drag, never a remove action.
   const source = await rows.nth(1).locator('.remove-file').boundingBox();
@@ -30,9 +32,11 @@ test('long press across the header reorders without activating its controls', as
   await page.mouse.move(target!.x + 50, target!.y + 1, { steps: 5 });
   await page.mouse.up();
   await expect(names).toHaveText(['second.ply', 'first.ply']);
-  await expect(page.locator('#file-0')).not.toBeChecked();
+  await expect(page.locator('#file-0')).toBeChecked();
   await expect(page.locator('#file-1')).toBeChecked();
   await expect(rows).toHaveCount(2);
+  // first.ply moved down and is still the selected one.
+  await expect(rows.nth(1)).toHaveClass(/selected/);
 
   // Escape cancels and suppresses the release click on the filename.
   const first = await names.first().boundingBox();
@@ -44,10 +48,13 @@ test('long press across the header reorders without activating its controls', as
   await page.keyboard.press('Escape');
   await page.mouse.up();
   await expect(names).toHaveText(['second.ply', 'first.ply']);
-  await expect(page.locator('#file-1')).toBeChecked();
+  // The release did not click (select) the name it started on.
+  await expect(rows.first()).not.toHaveClass(/selected/);
+  await expect(rows.nth(1)).toHaveClass(/selected/);
   // The next ordinary click still works.
   await names.first().click();
-  await expect(page.locator('#file-1')).not.toBeChecked();
+  await expect(rows.first()).toHaveClass(/selected/);
+  await expect(rows.nth(1)).not.toHaveClass(/selected/);
 });
 
 test('collapsed box borders and padding can start a reorder', async ({ page }) => {

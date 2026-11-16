@@ -1,4 +1,5 @@
 <script lang="ts">
+  import Disclosure from './Disclosure.svelte';
   import { isPngDerivedFile } from '../depth/commentSettings';
   import {
     CAMERA_MODEL_COEFFICIENT_GROUPS,
@@ -153,14 +154,9 @@
 </script>
 
 <div class="depth-controls" style="margin-top: 8px;">
-  <button
-    class="depth-settings-toggle"
-    data-file-index={fileIndex}
-    style="background: var(--vscode-button-background); color: var(--vscode-button-foreground); border: 1px solid var(--vscode-panel-border); padding: 4px 8px; border-radius: 2px; cursor: pointer; font-size: 11px; width: 100%;"
-    onclick={toggle}
+  <Disclosure class="depth-settings-toggle" data-file-index={fileIndex} {open} ontoggle={toggle}
+    >Depth Settings</Disclosure
   >
-    <span class="toggle-icon">{open ? '▼' : '▶'}</span> Depth Settings
-  </button>
   <!-- The listeners only delegate for events bubbling from the form controls
        inside; the panel itself is not interactive -->
   <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
@@ -273,14 +269,12 @@
       </div>
     </div>
     <div class="depth-group" style="margin-bottom: 8px;">
-      <button
+      <Disclosure
         class="depth-section-toggle"
         data-section={`principal-point-${fileIndex}`}
-        style="width: 100%; text-align: left; background: transparent; border: none; color: var(--vscode-foreground); cursor: pointer; padding: 2px 0; font-size: 10px; font-weight: bold; display: flex; align-items: center; gap: 4px;"
-        onclick={() => (principalPointOpen = !principalPointOpen)}
+        open={principalPointOpen}
+        ontoggle={() => (principalPointOpen = !principalPointOpen)}>Principal Point (px)</Disclosure
       >
-        <span class="toggle-icon" style="font-size: 8px;">{principalPointOpen ? '▼' : '▶'}</span> Principal Point (px)
-      </button>
       <div
         class="depth-section-content"
         id={`principal-point-${fileIndex}`}
@@ -331,14 +325,12 @@
       id={`distortion-params-${fileIndex}`}
       style="margin-bottom: 8px; display: {showDistortionGroup ? '' : 'none'};"
     >
-      <button
+      <Disclosure
         class="depth-section-toggle"
         data-section={`distortion-content-${fileIndex}`}
-        style="width: 100%; text-align: left; background: transparent; border: none; color: var(--vscode-foreground); cursor: pointer; padding: 2px 0; font-size: 10px; font-weight: bold; display: flex; align-items: center; gap: 4px;"
-        onclick={() => (distortionOpen = !distortionOpen)}
+        open={distortionOpen}
+        ontoggle={() => (distortionOpen = !distortionOpen)}>Distortion Parameters</Disclosure
       >
-        <span class="toggle-icon" style="font-size: 8px;">{distortionOpen ? '▼' : '▶'}</span> Distortion Parameters
-      </button>
       <div
         class="depth-section-content"
         id={`distortion-content-${fileIndex}`}
@@ -390,14 +382,12 @@
       />
     </div>
     <div class="depth-group" id={`disparity-offset-group-${fileIndex}`} style="margin-bottom: 8px; {isDisparity ? '' : 'display:none;'}">
-      <button
+      <Disclosure
         class="depth-section-toggle"
         data-section={`disparity-offset-content-${fileIndex}`}
-        style="width: 100%; text-align: left; background: transparent; border: none; color: var(--vscode-foreground); cursor: pointer; padding: 2px 0; font-size: 10px; font-weight: bold; display: flex; align-items: center; gap: 4px;"
-        onclick={() => (disparityOffsetOpen = !disparityOffsetOpen)}
+        open={disparityOffsetOpen}
+        ontoggle={() => (disparityOffsetOpen = !disparityOffsetOpen)}>Disparity Offset</Disclosure
       >
-        <span class="toggle-icon" style="font-size: 8px;">{disparityOffsetOpen ? '▼' : '▶'}</span> Disparity Offset
-      </button>
       <div
         class="depth-section-content"
         id={`disparity-offset-content-${fileIndex}`}
@@ -425,14 +415,12 @@
       </div>
     </div>
     <div class="depth-group" style="margin-bottom: 8px;">
-      <button
+      <Disclosure
         class="depth-section-toggle"
         data-section={`mono-params-${fileIndex}`}
-        style="width: 100%; text-align: left; background: transparent; border: none; color: var(--vscode-foreground); cursor: pointer; padding: 2px 0; font-size: 10px; font-weight: bold; display: flex; align-items: center; gap: 4px;"
-        onclick={() => (monoParamsOpen = !monoParamsOpen)}
+        open={monoParamsOpen}
+        ontoggle={() => (monoParamsOpen = !monoParamsOpen)}>Depth from Mono Parameters ⭐</Disclosure
       >
-        <span class="toggle-icon" style="font-size: 8px;">{monoParamsOpen ? '▼' : '▶'}</span> Depth from Mono Parameters ⭐
-      </button>
       <div
         class="depth-section-content"
         id={`mono-params-${fileIndex}`}
@@ -479,14 +467,12 @@
       </div>
     {/if}
     <div class="depth-group" style="margin-bottom: 8px;">
-      <button
+      <Disclosure
         class="depth-section-toggle"
         data-section={`rgb24-params-${fileIndex}`}
-        style="width: 100%; text-align: left; background: transparent; border: none; color: var(--vscode-foreground); cursor: pointer; padding: 2px 0; font-size: 10px; font-weight: bold; display: flex; align-items: center; gap: 4px;"
-        onclick={() => (rgb24Open = !rgb24Open)}
+        open={rgb24Open}
+        ontoggle={() => (rgb24Open = !rgb24Open)}>RGB to 24bit Conversion Mode</Disclosure
       >
-        <span class="toggle-icon" style="font-size: 8px;">{rgb24Open ? '▼' : '▶'}</span> RGB to 24bit Conversion Mode
-      </button>
       <div
         class="depth-section-content"
         id={`rgb24-params-${fileIndex}`}
@@ -508,14 +494,12 @@
       </div>
     </div>
     <div class="depth-group" style="margin-bottom: 8px;">
-      <button
+      <Disclosure
         class="depth-section-toggle"
         data-section={`coordinate-convention-${fileIndex}`}
-        style="width: 100%; text-align: left; background: transparent; border: none; color: var(--vscode-foreground); cursor: pointer; padding: 2px 0; font-size: 10px; font-weight: bold; display: flex; align-items: center; gap: 4px;"
-        onclick={() => (conventionOpen = !conventionOpen)}
+        open={conventionOpen}
+        ontoggle={() => (conventionOpen = !conventionOpen)}>Coordinate Convention ⭐</Disclosure
       >
-        <span class="toggle-icon" style="font-size: 8px;">{conventionOpen ? '▼' : '▶'}</span> Coordinate Convention ⭐
-      </button>
       <div
         class="depth-section-content"
         id={`coordinate-convention-${fileIndex}`}
@@ -528,14 +512,12 @@
       </div>
     </div>
     <div class="depth-group" style="margin-bottom: 8px;">
-      <button
+      <Disclosure
         class="depth-section-toggle"
         data-section={`color-image-${fileIndex}`}
-        style="width: 100%; text-align: left; background: transparent; border: none; color: var(--vscode-foreground); cursor: pointer; padding: 2px 0; font-size: 10px; font-weight: bold; display: flex; align-items: center; gap: 4px;"
-        onclick={() => (colorImageOpen = !colorImageOpen)}
+        open={colorImageOpen}
+        ontoggle={() => (colorImageOpen = !colorImageOpen)}>Color Image (optional)</Disclosure
       >
-        <span class="toggle-icon" style="font-size: 8px;">{colorImageOpen ? '▼' : '▶'}</span> Color Image (optional)
-      </button>
       <div
         class="depth-section-content"
         id={`color-image-${fileIndex}`}

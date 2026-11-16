@@ -1,4 +1,5 @@
 <script lang="ts">
+  import Disclosure from './Disclosure.svelte';
   let { host, fileIndex }: { host: any; fileIndex: number } = $props();
 
   const calibration = $derived(host.fileEntries.require(fileIndex).state.depthForm?.calibration);
@@ -10,14 +11,12 @@
 </script>
 
 <div class="depth-group" style="margin-bottom: 8px;">
-  <button
+  <Disclosure
     class="depth-section-toggle"
     data-section={`load-calibration-${fileIndex}`}
-    style="width: 100%; text-align: left; background: transparent; border: none; color: var(--vscode-foreground); cursor: pointer; padding: 2px 0; font-size: 10px; font-weight: bold; display: flex; align-items: center; gap: 4px;"
-    onclick={toggle}
+    {open}
+    ontoggle={toggle}>Load Calibration (beta)</Disclosure
   >
-    <span class="toggle-icon" style="font-size: 8px;">{open ? '▼' : '▶'}</span> Load Calibration (beta)
-  </button>
   <div
     class="depth-section-content"
     id={`load-calibration-${fileIndex}`}

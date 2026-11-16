@@ -20,7 +20,11 @@
 - **DAW-style solo**: an `S` button per file and `1`–`9` keys show only that
   file; `Shift`/`Ctrl` adds to the solo set, `↑`/`↓` or `[`/`]` step through,
   `0`/`Esc` ends it. Solo never touches a file's own visibility checkbox, which
-  comes back when solo ends.
+  comes back when solo ends. The lock next to `S` freezes a file's solo state:
+  locked while soloed, it stays in every solo (a reference to compare the others
+  against); locked while not, it stays out.
+- **Reordering**: drag a card by its header in the file list, or an item in the
+  solo panel; both share one order, which the `1`–`9` keys follow.
 - **Solo panel**: a floating, draggable, resizable list (or tile grid) of the
   files, hideable from the View menu or the file list. Optional smart name
   shortening collapses the parts every name shares (`…noise=0.01_seed=7`),
@@ -40,7 +44,20 @@
 - **File actions**: click cards to select files (Ctrl/Shift to add) and act on
   the selection from the action bar, or right-click any card for its own menu:
   Subsample (thin loaded clouds to free memory; runs in the background with the
-  cards locked), Show, Hide, Remove, Select all.
+  cards locked), Show, Hide, Remove, Render mode, Select all.
+- **File names**: the desktop app records where each file is on disk. Show full
+  paths (`/x/y/…`, which grouping then matches) and abbreviation of the parts
+  all names share (`a…z`) are buttons in the file list, in the card menu and in
+  View ▸ Files Panel; the full path is on hover. Add Point Cloud opens in the
+  folder of the file added last.
+- **Aliases and viewer names**: double-click a name to give the file an alias, a
+  light-blue label shown instead of its name (remembered by path; `⇄` flips back
+  to the original; grouping keeps using the real name). Rename in viewer…
+  (Shift+double-click) changes the name used for display and grouping in the
+  window, never the file on disk.
+- **Last session**: File ▸ Open Recent reopens the files of recently closed
+  windows, in their order, with their groups, subsampling and each file's
+  settings (size, colour, render modes, transform, visibility, solo, locks).
 - **Viewer UI**: the side panel resizes from its edges, the file list is no
   longer height-capped, and Collapse all / Expand all buttons sit under the
   group controls. UI drags never move the 3D view.

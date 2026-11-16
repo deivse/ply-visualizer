@@ -21,7 +21,43 @@ contextBridge.exposeInMainWorld('plyDesktop', {
   },
   answerSubsample: (id, options) => ipcRenderer.send('subsample-answer', { id, options }),
   reportSoloPanel: visible => ipcRenderer.send('solo-panel-visibility', visible === true),
+  /** The window's files and grouping, so File → Open Recent can reopen them. */
+  reportSession: session => ipcRenderer.send('session', session),
+  /** Absolute path of a File the page got from a drop or its file input, or ''. */
+  pathForFile: file => {
+    try {
+      return webUtils.getPathForFile(file) || '';
+    } catch {
+      return '';
+    }
+  },
+  /** Paths of files the page loaded, so file dialogs start next to the last one. */
+  filesAdded: paths => ipcRenderer.send('files-added', [...paths].map(String)),
+  /** View → Files Panel: full paths / abbreviate identical parts / original names. */
+  onToggleFileNameOption: callback => {
+    ipcRenderer.on('toggle-file-name-option', (_event, key) => callback(String(key)));
+  },
+  reportFileNameOptions: options =>
+    ipcRenderer.send('file-name-options', {
+      fullPaths: options?.fullPaths === true,
+      abbreviate: options?.abbreviate === true,
+      originalNames: options?.originalNames === true,
+    }),
 });
+
+// "+ Add Point Cloud" clicks the page's hidden file input. Chromium's picker
+// cannot be told where to start, so the host's native dialog opens instead,
+// in the folder of the file added last.
+window.addEventListener(
+  'click',
+  event => {
+    if (event.target instanceof HTMLInputElement && event.target.id === 'hiddenFileInput') {
+      event.preventDefault();
+      ipcRenderer.send('pick-add-files');
+    }
+  },
+  true
+);
 
 // Dropping a folder (or a mix with folders) onto the window opens it like
 // File > Add Folder…: the page itself only understands plain files, so such

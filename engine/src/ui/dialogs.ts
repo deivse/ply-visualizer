@@ -8,7 +8,9 @@ export function escapeHtml(s: string): string {
 
 export function filenameTooltip(shortPath: string, displayedName: string): string {
   const pathName = shortPath.split(/[\\/]/).filter(Boolean).pop() || shortPath;
+  const slashes = (s: string) => s.replace(/\\/g, '/');
   return !displayedName ||
+    slashes(shortPath).endsWith(slashes(displayedName)) ||
     pathName.localeCompare(displayedName, undefined, { sensitivity: 'accent' }) === 0
     ? shortPath
     : `${shortPath} / ${displayedName}`;
@@ -18,13 +20,21 @@ export function addTooltipsToTruncatedFilenames(): void {
   const fileNameLabels = document.querySelectorAll('.file-name');
   fileNameLabels.forEach(label => {
     const element = label as HTMLElement;
-    const displayedName = (element.textContent || '').trim();
+    // The full name: the shown text may be abbreviated.
+    const displayedName = (
+      element.getAttribute('data-full-name') ||
+      element.textContent ||
+      ''
+    ).trim();
     // Usually `shortPath` already ends in the displayed filename. Container
     // formats are different: an X3A path belongs to every row while each row
     // displays its embedded X3R member. Preserve the source archive as context,
     // but always include the actual row name the tooltip is revealing.
     const shortPath = element.getAttribute('data-short-path');
-    if (shortPath) {
+    if (shortPath && element.classList.contains('aliased')) {
+      // An alias: say what it stands for.
+      element.title = `${displayedName}\nAlias of ${shortPath}`;
+    } else if (shortPath) {
       element.title = filenameTooltip(shortPath, displayedName);
     } else if (element.scrollWidth > element.clientWidth) {
       // Fallback: if no short path, show full text when truncated

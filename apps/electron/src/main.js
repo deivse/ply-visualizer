@@ -95,7 +95,15 @@ protocol.registerSchemesAsPrivileged([
 // ---- preferences (recent items, remembered answers) ------------------------
 
 const prefsFile = () => path.join(app.getPath('userData'), 'desktop-prefs.json');
-let prefs = { recent: [], folderGrouping: null };
+let prefs = { recent: [], folderGrouping: null, lastDir: null, sessions: [], live: {} };
+
+/** Sessions kept for File → Open Recent (closed windows, newest first). */
+const MAX_SESSIONS = 3;
+const validSession = s =>
+  s &&
+  Array.isArray(s.files) &&
+  s.files.length > 0 &&
+  s.files.every(f => f && typeof f.path === 'string');
 function loadPrefs() {
   try {
     const parsed = JSON.parse(fs.readFileSync(prefsFile(), 'utf8'));
@@ -107,7 +115,17 @@ function loadPrefs() {
         parsed.folderGrouping === 'group' || parsed.folderGrouping === 'all'
           ? parsed.folderGrouping
           : null,
+      lastDir: typeof parsed.lastDir === 'string' ? parsed.lastDir : null,
+      sessions: Array.isArray(parsed.sessions) ? parsed.sessions.filter(validSession) : [],
+      live: {},
     };
+    // Windows still open when the app last stopped (a crash, a kill): their
+    // sessions count as closed now.
+    const live = parsed.live && typeof parsed.live === 'object' ? Object.values(parsed.live) : [];
+    if (live.length) {
+      for (const session of live.filter(validSession)) keepSession(session);
+      savePrefs();
+    }
   } catch {
     // first run or unreadable: defaults
   }
@@ -120,6 +138,117 @@ function savePrefs() {
     console.error('Could not save preferences', error);
   }
 }
+/** File dialogs start in the folder of the file added last. */
+function rememberAdded(filePaths) {
+  const last = filePaths[filePaths.length - 1];
+  if (!last || !path.isAbsolute(last)) return;
+  const dir = path.dirname(last);
+  if (dir === prefs.lastDir) return;
+  prefs.lastDir = dir;
+  savePrefs();
+}
+
+let saveTimer = null;
+/** Saves soon, once for a burst of changes (sessions report as they change). */
+function savePrefsSoon() {
+  clearTimeout(saveTimer);
+  saveTimer = setTimeout(savePrefs, 1000);
+}
+
+const sameFiles = (a, b) =>
+  a.files.length === b.files.length && a.files.every((f, i) => f.path === b.files[i].path);
+
+/** Adds a session to the reopenable ones (newest first, no duplicates). */
+function keepSession(session) {
+  prefs.sessions = [
+    { ...session, closedAt: session.closedAt ?? Date.now() },
+    ...prefs.sessions.filter(s => !sameFiles(s, session)),
+  ].slice(0, MAX_SESSIONS);
+}
+
+/** "5 files in 2 groups · scans · 16 Nov 14:32" */
+function sessionLabel(session) {
+  const n = session.files.length;
+  const groups = session.groupCount > 1 ? ` in ${session.groupCount} groups` : '';
+  const dirs = session.files.map(f => path.dirname(f.path));
+  let common = dirs[0];
+  while (common && !dirs.every(d => d === common || d.startsWith(common + path.sep))) {
+    const up = path.dirname(common);
+    common = up === common ? '' : up;
+  }
+  const hint =
+    common && common !== path.parse(common).root
+      ? path.basename(common)
+      : path.basename(session.files[0].path);
+  const when = new Date(session.closedAt).toLocaleString(undefined, {
+    day: 'numeric',
+    month: 'short',
+    hour: '2-digit',
+    minute: '2-digit',
+  });
+  return `${n} file${n === 1 ? '' : 's'}${groups} · ${hint} · ${when}`;
+}
+
+/**
+ * Reopens a saved session in `win`, replacing its scene: its files in their
+ * list order, each with the share of points it had, and its grouping and
+ * active group. Files gone from disk are skipped and listed afterwards.
+ */
+async function restoreSession(win, session) {
+  const present = session.files.filter(f => isFile(f.path));
+  const missing = session.files.filter(f => !isFile(f.path));
+  if (!present.length) {
+    await dialog.showMessageBox(win, {
+      type: 'info',
+      title: 'Nothing to reopen',
+      message: 'None of the files of that session exist any more.',
+      detail: missing.map(f => f.path).join('\n'),
+    });
+    return;
+  }
+  const estimate = memory.estimateFiles(present.map(f => f.path));
+  const choice = await warnIfTooLarge(win, estimate, present.length);
+  if (choice === 'cancel') return;
+  let subsample;
+  if (choice === 'subsample') {
+    subsample = await askSubsample(win, estimate, { replace: true });
+    if (!subsample) return;
+  }
+  rememberAdded(present.map(f => f.path));
+  deliver(win, {
+    subsample,
+    files: present.map(f => {
+      const token = crypto.randomUUID();
+      openedFiles.set(token, f.path);
+      return {
+        name: typeof f.name === 'string' && f.name ? f.name : path.basename(f.path),
+        path: f.path,
+        url: `app://file/${token}`,
+        size: fs.statSync(f.path).size,
+        ...(f.subsample && f.subsample.fraction > 0
+          ? { subsample: { fraction: f.subsample.fraction } }
+          : {}),
+        ...(f.settings && typeof f.settings === 'object' ? { settings: f.settings } : {}),
+      };
+    }),
+    grouping:
+      session.grouping && typeof session.grouping.regex === 'string'
+        ? { regex: session.grouping.regex, enabled: session.grouping.enabled === true }
+        : 'off',
+    activeGroup: session.activeGroup || null,
+    title: sessionLabel(session).split(' · ')[1],
+    replace: true,
+  });
+  if (missing.length) {
+    void dialog.showMessageBox(win, {
+      type: 'info',
+      title: 'Some files are missing',
+      message: `${missing.length} of the session's ${session.files.length} files no longer exist and were skipped.`,
+      detail: missing.map(f => f.path).join('\n'),
+    });
+  }
+}
+
 function addRecent(kind, p) {
   prefs.recent = [{ kind, path: p }, ...prefs.recent.filter(r => r.path !== p)].slice(
     0,
@@ -270,6 +399,7 @@ async function openPaths(win, paths, { replace, subsample = false }) {
   } else {
     for (const p of resolved) addRecent(isDir(p) ? 'folder' : 'file', p);
   }
+  rememberAdded(items.map(item => item.abs));
   const title = folder
     ? path.basename(folder.root)
     : items.length === 1
@@ -292,7 +422,12 @@ async function openPaths(win, paths, { replace, subsample = false }) {
     files: items.map(item => {
       const token = crypto.randomUUID();
       openedFiles.set(token, item.abs);
-      return { name: item.name, url: `app://file/${token}`, size: fs.statSync(item.abs).size };
+      return {
+        name: item.name,
+        path: item.abs,
+        url: `app://file/${token}`,
+        size: fs.statSync(item.abs).size,
+      };
     }),
     grouping,
     title,
@@ -404,6 +539,7 @@ async function pick(win, kind, replace, subsample = false) {
       : replace
         ? `Open ${folder ? 'Folder' : 'Files'} (replaces the scene)`
         : `Add ${folder ? 'Folder' : 'Files'} to Scene`,
+    ...(prefs.lastDir && isDir(prefs.lastDir) ? { defaultPath: prefs.lastDir } : {}),
     properties: folder ? ['openDirectory'] : ['openFile', 'multiSelections'],
     filters: folder
       ? undefined
@@ -428,10 +564,43 @@ function soloPanelChecked() {
   return win ? windowState.get(win)?.soloPanelVisible !== false : true;
 }
 
-function syncSoloPanelMenuItem() {
-  const item = Menu.getApplicationMenu()?.getMenuItemById('solo-panel');
-  if (item) item.checked = soloPanelChecked();
+/** The focused window's file name options, as last reported by its page. */
+function fileNameOptions() {
+  const win = BrowserWindow.getFocusedWindow() ?? BrowserWindow.getAllWindows()[0];
+  return (
+    (win && windowState.get(win)?.fileNames) || {
+      fullPaths: false,
+      abbreviate: false,
+      originalNames: false,
+    }
+  );
 }
+
+function syncViewMenu() {
+  const menu = Menu.getApplicationMenu();
+  const solo = menu?.getMenuItemById('solo-panel');
+  if (solo) solo.checked = soloPanelChecked();
+  const names = fileNameOptions();
+  const fullPaths = menu?.getMenuItemById('file-full-paths');
+  if (fullPaths) fullPaths.checked = names.fullPaths;
+  const abbreviate = menu?.getMenuItemById('file-abbreviate');
+  if (abbreviate) abbreviate.checked = names.abbreviate;
+  const originalNames = menu?.getMenuItemById('file-original-names');
+  if (originalNames) originalNames.checked = names.originalNames;
+}
+
+/**
+ * The window a View menu click is for: the one Electron passes, else the
+ * focused one, else any. (getFocusedWindow() alone can be empty, and the
+ * checkbox would then flip without the page changing.)
+ */
+const menuWindow = win =>
+  (win instanceof BrowserWindow ? win : null) ??
+  BrowserWindow.getFocusedWindow() ??
+  BrowserWindow.getAllWindows()[0];
+
+const toggleFileNameOption = (key, win) =>
+  menuWindow(win)?.webContents.send('toggle-file-name-option', key);
 
 function buildMenu() {
   const isMac = process.platform === 'darwin';
@@ -454,6 +623,11 @@ function buildMenu() {
         {
           label: 'Open &Recent',
           submenu: [
+            ...prefs.sessions.map((session, i) => ({
+              label: `${i === 0 ? 'Last session' : 'Earlier session'}: ${sessionLabel(session)}`,
+              click: () => restoreSession(focusedWindow(), session),
+            })),
+            ...(prefs.sessions.length ? [{ type: 'separator' }] : []),
             ...(recent.length
               ? recent.map(r => ({
                   label: r.kind === 'folder' ? `${r.path}${path.sep}` : r.path,
@@ -463,9 +637,10 @@ function buildMenu() {
             { type: 'separator' },
             {
               label: 'Clear Recently Opened',
-              enabled: recent.length > 0,
+              enabled: recent.length > 0 || prefs.sessions.length > 0,
               click: () => {
                 prefs.recent = [];
+                prefs.sessions = [];
                 savePrefs();
                 app.clearRecentDocuments();
                 buildMenu();
@@ -536,7 +711,33 @@ function buildMenu() {
           label: '&Solo Panel',
           type: 'checkbox',
           checked: soloPanelChecked(),
-          click: () => BrowserWindow.getFocusedWindow()?.webContents.send('toggle-solo-panel'),
+          click: (_item, win) => menuWindow(win)?.webContents.send('toggle-solo-panel'),
+        },
+        {
+          label: 'Files &Panel',
+          submenu: [
+            {
+              id: 'file-full-paths',
+              label: 'Show &Full Paths',
+              type: 'checkbox',
+              checked: fileNameOptions().fullPaths,
+              click: (_item, win) => toggleFileNameOption('fullPaths', win),
+            },
+            {
+              id: 'file-abbreviate',
+              label: '&Abbreviate Identical Parts',
+              type: 'checkbox',
+              checked: fileNameOptions().abbreviate,
+              click: (_item, win) => toggleFileNameOption('abbreviate', win),
+            },
+            {
+              id: 'file-original-names',
+              label: 'Show &Original Names',
+              type: 'checkbox',
+              checked: fileNameOptions().originalNames,
+              click: (_item, win) => toggleFileNameOption('originalNames', win),
+            },
+          ],
         },
         { type: 'separator' },
         { role: 'togglefullscreen' },
@@ -601,7 +802,18 @@ function createWindow(initialPaths) {
   windowState.set(win, { ready: false, queued: [], readyWaiters: [], soloPanelVisible: true });
   const contents = win.webContents;
   win.on('closed', () => cancelAsks(contents));
-  win.on('focus', syncSoloPanelMenuItem);
+  // Its files become a session to reopen from File → Open Recent.
+  const id = win.id;
+  win.on('close', () => {
+    const session = prefs.live[id];
+    delete prefs.live[id];
+    if (validSession(session)) {
+      keepSession(session);
+      buildMenu();
+    }
+    savePrefs();
+  });
+  win.on('focus', syncViewMenu);
   win.webContents.on('did-start-loading', () => {
     windowState.get(win).ready = false;
     cancelAsks(win.webContents);
@@ -657,8 +869,39 @@ ipcMain.on('solo-panel-visibility', (event, visible) => {
   const state = win && windowState.get(win);
   if (state) {
     state.soloPanelVisible = visible !== false;
-    syncSoloPanelMenuItem();
+    syncViewMenu();
   }
+});
+ipcMain.on('file-name-options', (event, options) => {
+  const win = BrowserWindow.fromWebContents(event.sender);
+  const state = win && windowState.get(win);
+  if (state) {
+    state.fileNames = {
+      fullPaths: options?.fullPaths === true,
+      abbreviate: options?.abbreviate === true,
+      originalNames: options?.originalNames === true,
+    };
+    syncViewMenu();
+  }
+});
+// The page's "+ Add Point Cloud" button: the native dialog, which (unlike the
+// page's file input) can start in the folder of the last added file.
+ipcMain.on('pick-add-files', event => {
+  const win = BrowserWindow.fromWebContents(event.sender);
+  if (win) void pick(win, 'files', false);
+});
+// Files the page loaded on its own (small drops), for the dialogs' start folder.
+ipcMain.on('files-added', (_event, paths) => {
+  if (Array.isArray(paths)) rememberAdded(paths.filter(p => typeof p === 'string'));
+});
+// What a window shows (desktop.js), kept on disk as it changes so a crash
+// does not lose it; it becomes a reopenable session when the window closes.
+ipcMain.on('session', (event, session) => {
+  const win = BrowserWindow.fromWebContents(event.sender);
+  if (!win) return;
+  if (validSession(session)) prefs.live[win.id] = session;
+  else delete prefs.live[win.id];
+  savePrefsSoon();
 });
 ipcMain.on('set-title', (event, title) => {
   BrowserWindow.fromWebContents(event.sender)?.setTitle(String(title));
