@@ -3,6 +3,11 @@
 Changes to the desktop app. Each version's section becomes the notes of its
 GitHub release (`desktop-v<version>`), so keep the `## <version>` headings.
 
+## Unreleased
+
+- While files are selected, the All Colors menu becomes **Selection color**
+  and sets only the selected clouds, like Selection size.
+
 ## 0.1.7
 
 - **Reopen the last session:** File → Open Recent lists the last few closed

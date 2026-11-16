@@ -1,22 +1,30 @@
 <script lang="ts">
   import { filesState } from '../state/files.svelte';
   import { getPointCloudColorOptions, type PointCloudColorOption } from '../colorOptions';
+  import { fileSelection } from '../state/fileSelection.svelte';
 
   let { host }: { host: any } = $props();
 
   type Cloud = { index: number; data: any; options: PointCloudColorOption[] };
   type GlobalOption = PointCloudColorOption & { available: number };
 
-  const clouds = $derived.by((): Cloud[] => {
+  /**
+   * Every cloud not drawn as splats, by file (registry) index; like All
+   * Sizes, only the selected ones while any cloud is selected.
+   */
+  const allClouds = $derived.by((): (Cloud & { id: number })[] => {
     filesState.entries;
-
-    return (host.spatialFiles ?? []).flatMap((data: any, index: number) => {
+    return (host.fileEntries.all as readonly any[]).flatMap((entry, index: number) => {
+      const data = entry.kind === 'spatial' ? entry.spatial?.data : null;
       if (!data || host.splatMode?.isActive(index)) {
         return [];
       }
-      return [{ index, data, options: getPointCloudColorOptions(host, data, index) }];
+      return [{ id: entry.id, index, data, options: getPointCloudColorOptions(host, data, index) }];
     });
   });
+  const selectedClouds = $derived(allClouds.filter((cloud) => fileSelection.ids.includes(cloud.id)));
+  const forSelection = $derived(selectedClouds.length > 0);
+  const clouds = $derived(forSelection ? selectedClouds : allClouds);
   const cloudCount = $derived(clouds.length);
 
   const options = $derived.by((): GlobalOption[] => {
@@ -84,18 +92,18 @@
   }
 </script>
 
-{#if cloudCount > 1}
+{#if allClouds.length > 1}
   <div
     class="all-point-colors file-list-footer"
   >
     <div class="color-control" style="margin: 0;">
-      <label for="all-point-colors-select">All Colors:</label>
+      <label for="all-point-colors-select">{forSelection ? 'Selection color:' : 'All Colors:'}</label>
       <select
         id="all-point-colors-select"
         class="color-selector"
         value={commonMode}
         onchange={applyToAll}
-        title="Applies to compatible clouds only; other colors and all point sizes stay unchanged"
+        title={`Applies to ${forSelection ? `the ${cloudCount} selected` : 'all'} cloud${cloudCount === 1 ? '' : 's'} that offer the colour; other colours and all point sizes stay unchanged`}
       >
         {#if !commonMode}
           <option value="" disabled>Mixed</option>
