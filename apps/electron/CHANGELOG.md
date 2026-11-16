@@ -3,11 +3,6 @@
 Changes to the desktop app. Each version's section becomes the notes of its
 GitHub release (`desktop-v<version>`), so keep the `## <version>` headings.
 
-## Unreleased
-
-- While files are selected, the All Colors menu becomes **Selection color**
-  and sets only the selected clouds, like Selection size.
-
 ## 0.1.7
 
 - **Reopen the last session:** File → Open Recent lists the last few closed
@@ -72,6 +67,8 @@ GitHub release (`desktop-v<version>`), so keep the `## <version>` headings.
   screen readers.
 - Point size sliders reach further: up to ten times a cloud's recommended size
   (at least 0.25), instead of four times (at least 0.1).
+- While files are selected, the All Colors menu becomes **Selection color**
+  and sets only the selected clouds, like Selection size.
 
 ## 0.1.6
 
