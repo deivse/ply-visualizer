@@ -300,6 +300,10 @@ body {
   overflow-x: hidden;
   flex: 1;
   min-height: 0;
+  /* A column so the Files tab can shrink to the panel and scroll its list
+     inside; the other tabs keep their content height and scroll here. */
+  display: flex;
+  flex-direction: column;
 }
 
 .tab-content.collapsed {
@@ -434,9 +438,32 @@ button:focus-visible {
   background-color: var(--vscode-button-hoverBackground);
 }
 
-/* File List */
-#file-list {
-  margin-bottom: 16px;
+/* File List: the Files tab fills the panel, the list scrolls on its own and
+   the footer (All/Selection size and color, #file-list-footer) stays in view. */
+#files-tab.active {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+#files-tab > .panel-section {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+#files-tab > .panel-section > * {
+  flex: none;
+}
+#files-tab > .panel-section > #file-list {
+  flex: 0 1 auto;
+  min-height: 60px;
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+#file-list-footer:not(:empty) {
+  margin-top: 8px;
+}
+#file-list-footer > .file-list-footer:last-child {
+  margin-bottom: 0;
 }
 
 .file-item {

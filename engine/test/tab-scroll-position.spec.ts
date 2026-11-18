@@ -11,6 +11,9 @@ test.beforeEach(async ({ page }) => {
       const spacer = document.createElement('div');
       spacer.style.height = '2000px';
       spacer.dataset.testScrollSpacer = 'true';
+      // The Files tab is a flex column (its list scrolls inside); keep the
+      // spacer full height so the shared element still overflows.
+      spacer.style.flexShrink = '0';
       panel.appendChild(spacer);
     }
   });

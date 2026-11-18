@@ -3,6 +3,12 @@
 Changes to the desktop app. Each version's section becomes the notes of its
 GitHub release (`desktop-v<version>`), so keep the `## <version>` headings.
 
+## Unreleased
+
+- **Size and color stay in view:** the All/Selection size and color controls
+  sit below the file list instead of at its end. The list scrolls on its own
+  inside the Files panel, so they are reachable however many files are open.
+
 ## 0.1.7
 
 - **Reopen the last session:** File → Open Recent lists the last few closed

@@ -2,8 +2,6 @@
   import { fileRows, type FileListHost } from './fileListTypes';
   import { filesState } from '../state/files.svelte';
   import { addTooltipsToTruncatedFilenames } from '../ui/dialogs';
-  import AllPointColors from './AllPointColors.svelte';
-  import AllPointSizes from './AllPointSizes.svelte';
   import FileItem from './FileItem.svelte';
   import FileGroups from './FileGroups.svelte';
   import FileActions from './FileActions.svelte';
@@ -110,6 +108,4 @@
       <div class="file-info" id="pending-load-detail">{pendingLoadDetail}</div>
     </div>
   {/if}
-  <AllPointSizes {host} />
-  <AllPointColors {host} />
 {/if}
