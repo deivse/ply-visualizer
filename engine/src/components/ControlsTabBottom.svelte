@@ -27,7 +27,7 @@
       class:active={screenSpaceScaling}
       onclick={onToggleScreenSpaceScaling}
     >
-      Screen-Space Scaling <span class="button-shortcut">S</span>
+      Screen-Space Scaling <span class="button-shortcut">P</span>
     </button>
     <button
       id="toggle-transparency"

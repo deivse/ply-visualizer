@@ -267,10 +267,10 @@ test.describe('Comprehensive PLY File Loading Tests', () => {
     await page.waitForTimeout(1000);
     console.log('✅ R key (Reset Camera) tested');
 
-    // Test A key (Toggle Axes)
-    await page.keyboard.press('a');
+    // Test N key (Toggle Axes)
+    await page.keyboard.press('n');
     await page.waitForTimeout(1000);
-    console.log('✅ A key (Toggle Axes) tested');
+    console.log('✅ N key (Toggle Axes) tested');
 
     // Verify no console errors from keyboard shortcuts
     console.log('✅ Keyboard shortcuts tested without errors');

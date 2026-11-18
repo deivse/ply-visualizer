@@ -56,16 +56,16 @@ test.describe('Automatic Eye Dome Lighting', () => {
       .toBe(1);
 
     await page.locator('#three-canvas').click({ position: { x: 10, y: 10 } });
-    await page.keyboard.press('e');
+    await page.keyboard.press('j');
     await expect.poll(() => page.evaluate(() => (window as any).visualizer.edlMode)).toBe('all');
     await expect
       .poll(() => page.evaluate(() => (window as any).visualizer.edlPass.isSelective))
       .toBe(false);
 
-    await page.keyboard.press('e');
+    await page.keyboard.press('j');
     await expect.poll(() => page.evaluate(() => (window as any).visualizer.edlMode)).toBe('off');
 
-    await page.keyboard.press('e');
+    await page.keyboard.press('j');
     await expect.poll(() => page.evaluate(() => (window as any).visualizer.edlMode)).toBe('auto');
   });
 

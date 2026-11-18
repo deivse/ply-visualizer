@@ -242,6 +242,15 @@
   );
   whenReady().then(viewer => bridge.reportSoloPanel(!viewer.solo.panelHidden));
 
+  // View → Navigation Panel mirrors the floating navigation panel the same way.
+  bridge.onToggleNavigationPanel(() => window.plyNavigation?.toggle());
+  window.addEventListener('navigation-panel-visibility', event =>
+    bridge.reportNavigationPanel(event.detail.visible)
+  );
+  whenReady().then(() => {
+    if (window.plyNavigation) bridge.reportNavigationPanel(window.plyNavigation.visible);
+  });
+
   // View → Files → Show Full Paths / Abbreviate Identical Parts mirror the
   // options of the file list (also in its right-click menu).
   bridge.onToggleFileNameOption(key => window.plyFileNames?.toggle(key));

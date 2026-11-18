@@ -564,6 +564,12 @@ function soloPanelChecked() {
   return win ? windowState.get(win)?.soloPanelVisible !== false : true;
 }
 
+/** The focused window's navigation panel visibility, as last reported by its page. */
+function navigationPanelChecked() {
+  const win = BrowserWindow.getFocusedWindow() ?? BrowserWindow.getAllWindows()[0];
+  return win ? windowState.get(win)?.navigationPanelVisible === true : false;
+}
+
 /** The focused window's file name options, as last reported by its page. */
 function fileNameOptions() {
   const win = BrowserWindow.getFocusedWindow() ?? BrowserWindow.getAllWindows()[0];
@@ -580,6 +586,8 @@ function syncViewMenu() {
   const menu = Menu.getApplicationMenu();
   const solo = menu?.getMenuItemById('solo-panel');
   if (solo) solo.checked = soloPanelChecked();
+  const navigation = menu?.getMenuItemById('navigation-panel');
+  if (navigation) navigation.checked = navigationPanelChecked();
   const names = fileNameOptions();
   const fullPaths = menu?.getMenuItemById('file-full-paths');
   if (fullPaths) fullPaths.checked = names.fullPaths;
@@ -712,6 +720,13 @@ function buildMenu() {
           type: 'checkbox',
           checked: soloPanelChecked(),
           click: (_item, win) => menuWindow(win)?.webContents.send('toggle-solo-panel'),
+        },
+        {
+          id: 'navigation-panel',
+          label: '&Navigation Panel',
+          type: 'checkbox',
+          checked: navigationPanelChecked(),
+          click: (_item, win) => menuWindow(win)?.webContents.send('toggle-navigation-panel'),
         },
         {
           label: 'Files &Panel',
@@ -869,6 +884,14 @@ ipcMain.on('solo-panel-visibility', (event, visible) => {
   const state = win && windowState.get(win);
   if (state) {
     state.soloPanelVisible = visible !== false;
+    syncViewMenu();
+  }
+});
+ipcMain.on('navigation-panel-visibility', (event, visible) => {
+  const win = BrowserWindow.fromWebContents(event.sender);
+  const state = win && windowState.get(win);
+  if (state) {
+    state.navigationPanelVisible = visible === true;
     syncViewMenu();
   }
 });

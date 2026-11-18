@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { navigation, toggleNavigationPanel } from '../state/navigation.svelte';
   import { sceneGuidesState } from '../state/sceneGuides.svelte';
   import { viewerState } from '../state/viewer.svelte';
   import { measurementState } from '../state/measurement.svelte';
@@ -227,6 +228,9 @@
   function onArcball() {
     host.switchToArcballControls();
   }
+  function onFly() {
+    host.switchToFlyControls();
+  }
 
   function setRotationCenterMode(mode: 'move-camera' | 'keep-camera' | 'keep-distance') {
     host.rotationCenterManager.setMode(mode);
@@ -337,7 +341,7 @@
         aria-label={`Eye Dome Lighting: ${viewerState.edlMode}`}
         onclick={onToggleEdl}
       >
-        Eye Dome Lighting: {viewerState.edlMode[0].toUpperCase() + viewerState.edlMode.slice(1)} <span class="button-shortcut">E</span>
+        Eye Dome Lighting: {viewerState.edlMode[0].toUpperCase() + viewerState.edlMode.slice(1)} <span class="button-shortcut">J</span>
       </button>
     </div>
     <p class="setting-description">
@@ -422,7 +426,7 @@
       Reset Camera <span class="button-shortcut">R</span>
     </button>
     <button id="toggle-axes" class="control-button" class:active={axesVisible} onclick={onToggleAxes}>
-      Toggle Axes <span class="button-shortcut">A</span>
+      Toggle Axes <span class="button-shortcut">N</span>
     </button>
     <button
       id="toggle-cameras"
@@ -431,7 +435,7 @@
       onclick={onToggleCameras}>Show Cameras</button
     >
     <button id="set-rotation-origin" class="control-button" onclick={onSetRotationOrigin}>
-      Set Rotation Center to Origin <span class="button-shortcut">W</span>
+      Set Rotation Center to Origin <span class="button-shortcut">M</span>
     </button>
   </div>
   <p class="setting-description">
@@ -571,6 +575,26 @@
       onclick={onArcball}
     >
       Arcball <span class="button-shortcut">K</span>
+    </button>
+    <button
+      id="fly-controls"
+      class="control-button"
+      class:active={viewerState.controlScheme === 'fly'}
+      onclick={onFly}
+      title="Legacy Trackball while still; hold W/A/S/D (Q/E down/up, Shift faster) to fly, and drag to aim while moving"
+    >
+      Trackball + Fly
+    </button>
+  </div>
+  <div class="control-buttons">
+    <button
+      id="navigation-panel-toggle"
+      class="control-button"
+      class:active={!navigation.hidden}
+      onclick={toggleNavigationPanel}
+      title="Fly speed, always-aim (FPS) and trackpad mode"
+    >
+      Navigation Panel
     </button>
   </div>
 </div>

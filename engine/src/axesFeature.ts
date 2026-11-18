@@ -10,7 +10,7 @@ export interface AxesFeatureHost {
   }>;
   camera: THREE.PerspectiveCamera;
   scene: THREE.Scene;
-  controlType: 'trackball' | 'orbit' | 'legacy-trackball' | 'arcball';
+  controlType: 'trackball' | 'orbit' | 'legacy-trackball' | 'arcball' | 'fly';
   axesPermanentlyVisible: boolean;
   requestRender(): void;
   updateAxesButtonState(): void;

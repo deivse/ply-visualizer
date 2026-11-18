@@ -108,7 +108,7 @@ test('buttons do not paint a focus highlight after keyboard shortcuts', async ({
   await setup(page);
 
   await page.click('#film-add-keyframe');
-  await page.keyboard.press('e');
+  await page.keyboard.press('j');
 
   const focusStyle = await page.locator('#film-add-keyframe').evaluate(button => {
     const style = getComputedStyle(button);

@@ -102,6 +102,9 @@ import * as sceneBrightness from './sceneBrightness';
 import * as depthDefaultSettings from './depth/defaultSettings';
 import * as calibrationForm from './depth/calibrationForm';
 import * as controlSchemeSwitcher from './controlSchemeSwitcher';
+import { FlyNavigation, nearestAxis } from './flyNavigation';
+import { mountNavigationPanel } from './navigationPanelMount';
+import { loadControlScheme } from './state/navigation.svelte';
 import * as cameraConvention from './cameraConvention';
 import * as edl from './edl';
 import * as transparency from './transparency';
@@ -282,7 +285,10 @@ export class PointCloudVisualizer {
     | VirtualBallControls;
 
   // Camera control state
-  controlType: 'trackball' | 'orbit' | 'legacy-trackball' | 'arcball' = 'legacy-trackball';
+  // Remembered across sessions (state/navigation.svelte.js).
+  controlType: controlSchemeSwitcher.ControlType = loadControlScheme();
+  /** WASD flight, FPS aiming and trackpad mode (flyNavigation.ts). */
+  private flyNavigation: FlyNavigation | null = null;
   screenSpaceScaling: boolean = false;
   allowTransparency: boolean = false;
 
@@ -846,6 +852,7 @@ export class PointCloudVisualizer {
 
     // Initialize controls
     this.initializeControls();
+    this.flyNavigation = new FlyNavigation(this as any);
     this.touchNavigation = new TouchNavigationController({
       camera: this.camera,
       element: this.renderer.domElement,
@@ -985,8 +992,9 @@ export class PointCloudVisualizer {
       ball.rollSpeed = 3.0;
       ball.zoomSpeed = 2.5;
       ball.panSpeed = 1.5;
-    } else if (this.controlType === 'legacy-trackball') {
-      // Default: three.js delta-based TrackballControls.
+    } else if (this.controlType === 'legacy-trackball' || this.controlType === 'fly') {
+      // Default: three.js delta-based TrackballControls. 'fly' is the same
+      // trackball, with WASD flight and FPS aiming on top (flyNavigation.ts).
       this.controls = new TrackballControls(this.camera, this.renderer.domElement);
       const trackballControls = this.controls as TrackballControls;
       trackballControls.rotateSpeed = 5.0;
@@ -1002,6 +1010,12 @@ export class PointCloudVisualizer {
       trackballControls.screen.top = 0;
       trackballControls.screen.width = this.renderer.domElement.clientWidth;
       trackballControls.screen.height = this.renderer.domElement.clientHeight;
+      if (this.controlType === 'fly') {
+        // A/S/D are its rotate/zoom/pan hold keys; here they fly.
+        trackballControls.keys = ['', '', ''];
+        // Flight and aiming are level with the scene's up (set by X/Y/Z).
+        (trackballControls as any).worldUp = nearestAxis(this.camera.up);
+      }
     } else if (this.controlType === 'arcball') {
       this.controls = new CustomArcballControls(this.camera, this.renderer.domElement);
       const arc = this.controls as CustomArcballControls;
@@ -1345,7 +1359,7 @@ export class PointCloudVisualizer {
     // Update controls based on type (TrackballControls-based schemes need
     // their screen rectangle refreshed on resize; VirtualBallControls reads
     // the live canvas rect on every event and needs nothing here)
-    if (this.controlType === 'legacy-trackball') {
+    if (this.controlType === 'legacy-trackball' || this.controlType === 'fly') {
       const trackballControls = this.controls as TrackballControls;
       trackballControls.screen.width = container.clientWidth;
       trackballControls.screen.height = container.clientHeight;
@@ -1390,7 +1404,8 @@ export class PointCloudVisualizer {
     // Update FPS calculation (always, to decay to 0 when no renders)
     this.updateFPSCalculation();
 
-    // Update controls
+    // Fly the camera (held WASD/QE), then update controls
+    const flew = this.flyNavigation?.update() ?? false;
     this.controls.update();
 
     // Update measurement label positions
@@ -1474,7 +1489,9 @@ export class PointCloudVisualizer {
       // Track render event
       this.trackRender();
     }
-    this.sleepIfIdle(rendered || positionChanged || rotationChanged || rotationCenterChanged);
+    this.sleepIfIdle(
+      flew || rendered || positionChanged || rotationChanged || rotationCenterChanged
+    );
   }
 
   requestRender(): void {
@@ -2055,6 +2072,7 @@ export class PointCloudVisualizer {
     // updateFileList() and docs/SVELTE_MIGRATION_PLAN.md Phase 3.
     mountFileList(this.lifetime, this);
     mountSoloBar(this.lifetime, this.solo, () => this.sequenceMode);
+    mountNavigationPanel(this.lifetime, this);
     this.solo.installShortcuts();
     mountGlobalAlignMenu(this.lifetime, this);
     mountStats(this.lifetime, this);
@@ -2099,6 +2117,11 @@ export class PointCloudVisualizer {
       if (e.metaKey || e.ctrlKey || e.altKey) {
         return;
       }
+      // W/A/S/D/Q/E fly in the fly scheme (by physical key, so e.g. AZERTY's
+      // Z on the W position must not also set Z-up).
+      if (this.flyNavigation?.consumes(e)) {
+        return;
+      }
 
       switch (e.key.toLowerCase()) {
         case 'h':
@@ -2117,7 +2140,8 @@ export class PointCloudVisualizer {
           }
           e.preventDefault();
           break;
-        case 'a':
+        // W/A/S/D/Q/E are kept free for flying (fly scheme).
+        case 'n':
           this.toggleAxesVisibility();
           e.preventDefault();
           break;
@@ -2166,8 +2190,7 @@ export class PointCloudVisualizer {
           this.setUpVector(new THREE.Vector3(0, 0, 1));
           e.preventDefault();
           break;
-        case 'w':
-          // debug
+        case 'm':
           this.setRotationCenterToOrigin();
           this.updateRotationOriginButtonState();
           e.preventDefault();
@@ -2176,11 +2199,11 @@ export class PointCloudVisualizer {
           this.toggleGammaCorrection();
           e.preventDefault();
           break;
-        case 's':
+        case 'p':
           this.toggleScreenSpaceScaling();
           e.preventDefault();
           break;
-        case 'e':
+        case 'j':
           this.toggleEDL();
           e.preventDefault();
           break;
@@ -3742,6 +3765,10 @@ export class PointCloudVisualizer {
 
   private switchToLegacyTrackballControls(): void {
     controlSchemeSwitcher.switchToLegacyTrackballControls(this);
+  }
+
+  private switchToFlyControls(): void {
+    controlSchemeSwitcher.switchToFlyControls(this);
   }
 
   private switchToArcballControls(): void {

@@ -102,9 +102,12 @@ export function showKeyboardShortcuts(onCreateShortcutsUI: () => void): void {
   K: Switch to ArcballControls
   C: Set OpenCV camera convention (Y-down)
   B: Set OpenGL camera convention (Y-up)
-  W: Set rotation center to world origin (0,0,0)
+  M: Set rotation center to world origin (0,0,0)
+  N: Toggle axes
+  J: Toggle Eye Dome Lighting
   G: Toggle gamma correction
-  S: Toggle screen-space scaling (distance-based point sizes)
+  P: Toggle screen-space scaling (distance-based point sizes)
+  Trackball + Fly: W/A/S/D move, Q/E down/up, Shift faster, drag while moving to aim
   T: Toggle transparency (re-enable alpha blending)`);
 
   // Create permanent shortcuts UI section
@@ -145,12 +148,22 @@ export function createShortcutsUI(onUpdateControlStatus: () => void): void {
                 <div><span style="font-weight: bold;">O</span> Switch to OrbitControls</div>
                 <div><span style="font-weight: bold;">I</span> Switch to Legacy Trackball controls (default)</div>
                 <div><span style="font-weight: bold;">K</span> Switch to ArcballControls</div>
+                <div><span style="font-weight: bold;">N</span> Toggle axes</div>
+                <div><span style="font-weight: bold;">J</span> Toggle Eye Dome Lighting</div>
+                <div><span style="font-weight: bold;">P</span> Toggle screen-space point scaling</div>
+            </div>
+            <div style="font-weight: bold; margin: 8px 0 4px 0; color: var(--vscode-textLink-foreground);">✈️ Trackball + Fly</div>
+            <div style="font-family: var(--vscode-editor-font-family); line-height: 1.4;">
+                <div><span style="font-weight: bold;">W A S D</span> Fly forward/left/back/right</div>
+                <div><span style="font-weight: bold;">Q / E</span> Fly down/up</div>
+                <div><span style="font-weight: bold;">Shift</span> Fly faster</div>
+                <div><span style="font-weight: bold;">Drag while moving</span> Aim (FPS)</div>
             </div>
             <div style="font-weight: bold; margin: 8px 0 4px 0; color: var(--vscode-textLink-foreground);">📷 Camera Conventions</div>
             <div style="font-family: var(--vscode-editor-font-family); line-height: 1.4; margin-bottom: 8px;">
                 <div><span id="opencv-camera" style="color: var(--vscode-textLink-foreground); cursor: pointer; text-decoration: underline;">OpenCV (Y↓) [C]</span></div>
                 <div><span id="opengl-camera" style="color: var(--vscode-textLink-foreground); cursor: pointer; text-decoration: underline;">OpenGL (Y↑) [B]</span></div>
-                <div><span style="color: var(--vscode-foreground);">World Origin [W]</span></div>
+                <div><span style="color: var(--vscode-foreground);">World Origin [M]</span></div>
             </div>
             <div style="font-weight: bold; margin: 8px 0 4px 0; color: var(--vscode-textLink-foreground);">🖱️ Mouse Interactions</div>
             <div style="font-family: var(--vscode-editor-font-family); line-height: 1.4;">

@@ -1,6 +1,7 @@
 import { viewerState } from './state/viewer.svelte';
+import { saveControlScheme } from './state/navigation.svelte';
 
-export type ControlType = 'trackball' | 'orbit' | 'legacy-trackball' | 'arcball';
+export type ControlType = 'trackball' | 'orbit' | 'legacy-trackball' | 'arcball' | 'fly';
 
 export interface ControlSchemeHost {
   controlType: ControlType;
@@ -9,52 +10,40 @@ export interface ControlSchemeHost {
   showStatus(message: string): void;
 }
 
-export function switchToTrackballControls(host: ControlSchemeHost): void {
-  if (host.controlType === 'trackball') {
+/** Switches scheme and remembers it for the next session. */
+function switchTo(host: ControlSchemeHost, type: ControlType, message: string): void {
+  if (host.controlType === type) {
     return;
   }
-
-  console.log('🔄 Switching to TrackballControls');
-  host.controlType = 'trackball';
+  host.controlType = type;
+  saveControlScheme(type);
   host.initializeControls();
   host.updateControlStatus();
-  host.showStatus('Switched to Trackball controls');
+  host.showStatus(message);
+}
+
+export function switchToTrackballControls(host: ControlSchemeHost): void {
+  switchTo(host, 'trackball', 'Switched to Trackball controls');
 }
 
 export function switchToOrbitControls(host: ControlSchemeHost): void {
-  if (host.controlType === 'orbit') {
-    return;
-  }
-
-  console.log('🔄 Switching to OrbitControls');
-  host.controlType = 'orbit';
-  host.initializeControls();
-  host.updateControlStatus();
-  host.showStatus('Switched to Orbit controls');
+  switchTo(host, 'orbit', 'Switched to Orbit controls');
 }
 
 export function switchToLegacyTrackballControls(host: ControlSchemeHost): void {
-  if (host.controlType === 'legacy-trackball') {
-    return;
-  }
-
-  console.log('🔄 Switching to Legacy TrackballControls');
-  host.controlType = 'legacy-trackball';
-  host.initializeControls();
-  host.updateControlStatus();
-  host.showStatus('Switched to Legacy Trackball controls (delta-based)');
+  switchTo(host, 'legacy-trackball', 'Switched to Legacy Trackball controls (delta-based)');
 }
 
 export function switchToArcballControls(host: ControlSchemeHost): void {
-  if (host.controlType === 'arcball') {
-    return;
-  }
+  switchTo(host, 'arcball', 'Switched to Arcball controls');
+}
 
-  console.log('🔄 Switching to ArcballControls');
-  host.controlType = 'arcball';
-  host.initializeControls();
-  host.updateControlStatus();
-  host.showStatus('Switched to Arcball controls');
+export function switchToFlyControls(host: ControlSchemeHost): void {
+  switchTo(
+    host,
+    'fly',
+    'Switched to Trackball + Fly: hold W/A/S/D (Q/E down/up, Shift faster) and drag to aim'
+  );
 }
 
 export function updateControlStatus(host: ControlSchemeHost): void {
@@ -74,6 +63,7 @@ export function updateControlStatus(host: ControlSchemeHost): void {
     { id: 'orbit-controls', type: 'orbit' },
     { id: 'legacy-trackball-controls', type: 'legacy-trackball' },
     { id: 'arcball-controls', type: 'arcball' },
+    { id: 'fly-controls', type: 'fly' },
   ];
 
   controlButtons.forEach(button => {

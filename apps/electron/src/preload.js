@@ -15,6 +15,11 @@ contextBridge.exposeInMainWorld('plyDesktop', {
   onToggleSoloPanel: callback => {
     ipcRenderer.on('toggle-solo-panel', () => callback());
   },
+  onToggleNavigationPanel: callback => {
+    ipcRenderer.on('toggle-navigation-panel', () => callback());
+  },
+  reportNavigationPanel: visible =>
+    ipcRenderer.send('navigation-panel-visibility', visible === true),
   /** File > Advanced Open: the host asks how to subsample; answer with options or null. */
   onAskSubsample: callback => {
     ipcRenderer.on('ask-subsample', (_event, request) => callback(request));

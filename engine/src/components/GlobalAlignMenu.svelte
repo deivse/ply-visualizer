@@ -281,10 +281,10 @@
         onclick={() => host.toggleEDL()}
         disabled={!host.effectComposer}
       >
-        Eye Dome Lighting <span>{viewerState.edlMode[0].toUpperCase() + viewerState.edlMode.slice(1)} · E</span>
+        Eye Dome Lighting <span>{viewerState.edlMode[0].toUpperCase() + viewerState.edlMode.slice(1)} · J</span>
       </button>
       <button id="tools-world-origin" onclick={setRotationCenterToOrigin}>
-        Rotation center: world origin <span>W</span>
+        Rotation center: world origin <span>M</span>
       </button>
       {#if available}
         <button

@@ -5,6 +5,16 @@ GitHub release (`desktop-v<version>`), so keep the `## <version>` headings.
 
 ## Unreleased
 
+- **Trackball + Fly:** a new control scheme. It is the legacy trackball while
+  still; hold W/A/S/D to fly (Q/E down/up, Shift faster) and drag while moving
+  to aim FPS-style from where the camera stands.
+- **Navigation panel** (View ▸ Navigation Panel, or the Controls tab): control
+  scheme, fly and aim speed, **Always aim (FPS)**, and **Trackpad mode** —
+  two-finger scroll rotates without clicking, pinch zooms, Shift+scroll pans.
+  The control scheme and these settings are remembered across sessions.
+- **Shortcuts moved** to free W/A/S/D/Q/E: axes `N` (was `A`), screen-space
+  point scaling `P` (was `S`), Eye Dome Lighting `J` (was `E`), rotation center
+  to world origin `M` (was `W`).
 - **Size and color stay in view:** the All/Selection size and color controls
   sit below the file list instead of at its end. The list scrolls on its own
   inside the Files panel, so they are reachable however many files are open.

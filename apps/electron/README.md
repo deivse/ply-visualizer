@@ -121,6 +121,33 @@ shortens long names by collapsing the parts every name shares
 (`engine/src/utils/smartAbbreviate.ts`), keeping `key=` whenever a value
 differs. Hover any item for its full name. Layout is remembered.
 
+## Navigation (engine/src/flyNavigation.ts)
+
+**Trackball + Fly** (Controls tab, or the navigation panel) is the legacy
+trackball while standing still. Holding a movement key flies the camera and its
+rotation center together, and a left drag then aims from where the camera stands
+(FPS-style, level with the up axis set by `X`/`Y`/`Z`) instead of orbiting. Keys
+go by physical position, so the cluster is the same on any layout.
+
+| Input                     | Effect                                   |
+| ------------------------- | ---------------------------------------- |
+| `W` `A` `S` `D`           | Fly forward / left / back / right        |
+| `Q` / `E`                 | Fly down / up                            |
+| `Shift` (with a move key) | Fly 4× faster                            |
+| Drag while moving         | Aim (lasts until the button is released) |
+
+Speed is relative to the distance to the rotation center, so zooming in slows
+flight down. View ▸ Navigation Panel (or Controls tab ▸ Navigation Panel) shows
+a floating panel with the control scheme, fly and aim speed, **Always aim
+(FPS)** (drag aims with no key held) and **Trackpad mode** (Trackball + Fly and
+Legacy Trackball): two-finger scroll rotates (or aims), pinch zooms,
+Shift+scroll pans, with no click needed; a mouse wheel then rotates too. The
+control scheme and all of these are remembered across sessions.
+
+Moved to make room: axes `N` (was `A`), screen-space point scaling `P` (was
+`S`), Eye Dome Lighting `J` (was `E`), rotation center to world origin `M` (was
+`W`).
+
 ## Files
 
 - `src/main.js` — windows, menus, folder scanning, recents, prompts, `app://`
