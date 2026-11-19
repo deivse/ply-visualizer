@@ -206,7 +206,12 @@ async function restoreSession(win, session) {
     });
     return;
   }
-  const estimate = memory.estimateFiles(present.map(f => f.path));
+  // Each file comes back with the share of points it had, so only warn when
+  // that does not fit either.
+  const estimate = memory.estimateFiles(
+    present.map(f => f.path),
+    present.map(f => Number(f.subsample?.fraction) || 1)
+  );
   const choice = await warnIfTooLarge(win, estimate, present.length);
   if (choice === 'cancel') return;
   let subsample;
@@ -484,8 +489,9 @@ async function askSubsample(win, estimate, { replace }) {
       replace,
       bytes: estimate.bytes,
       exact: estimate.exact,
-      // Per-file costs; the page plans with loadBudget.js, as here.
-      files: estimate.files,
+      // Per-file costs; the page plans with loadBudget.js, as here. A share
+      // chosen in the dialog replaces any a reopened session saved.
+      files: estimate.files.map(({ subsample: _saved, ...cost }) => cost),
       ...memory.memoryInfo(),
     });
   });

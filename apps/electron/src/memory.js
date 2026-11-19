@@ -162,9 +162,16 @@ function fileCost(file) {
   return { ...budget.minimalCost(Math.round(size / 12), size, false), size };
 }
 
-/** Costs of `paths`, and what loading all of them normally takes. */
-function estimateFiles(paths) {
-  const files = paths.map(fileCost);
+/**
+ * Costs of `paths`, and what loading all of them normally takes. `shares`
+ * (per path, optional) are the fractions of points a reopened session keeps.
+ */
+function estimateFiles(paths, shares = []) {
+  const files = paths.map((p, i) => {
+    const cost = fileCost(p);
+    const share = shares[i];
+    return share > 0 && share < 1 ? { ...cost, subsample: { fraction: share } } : cost;
+  });
   const plan = budget.planLoad(files, null);
   return {
     files,

@@ -5,6 +5,9 @@ GitHub release (`desktop-v<version>`), so keep the `## <version>` headings.
 
 ## Unreleased
 
+- **Fixed:** reopening a subsampled session from File ▸ Open Recent asked to
+  subsample again. The memory check now counts each file at the share it is
+  reopened with; subsampling chosen anew still replaces those shares.
 - **Trackball + Fly:** a new control scheme. It is the legacy trackball while
   still; hold W/A/S/D to fly (Q/E down/up, Shift faster) and drag while moving
   to aim FPS-style from where the camera stands. Aiming keeps the camera's

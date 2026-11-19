@@ -50,12 +50,12 @@
 
   // Subsampled loading reads, parses and thins one file at a time, so only
   // one full-size file is ever in memory. A restored session gives each file
-  // its own share (file.subsample).
+  // its own share (file.subsample), unless subsampling was chosen anew.
   async function loadSubsampled(viewer, files, subsample) {
     for (let i = 0; i < files.length; i++) {
       bridge.setTitle(`Loading ${i + 1}/${files.length}… — PLY Visualizer`);
       try {
-        const options = files[i].subsample || subsample;
+        const options = subsample || files[i].subsample;
         await viewer.handleBrowserFiles(
           [readFile(files[i])],
           options ? { subsample: options } : {}

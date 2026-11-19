@@ -426,8 +426,10 @@
    *   only until it is thinned.
    * Persistent wasm memory is the largest single need (it is reused).
    */
+  // `options` (a subsampled load) applies to every file; without it, a file's
+  // own `subsample` (a reopened session's saved share) applies to it alone.
   function planLoad(files, options) {
-    const sequential = !!options;
+    const sequential = !!options || files.some(file => file.subsample);
     let steady = FIXED_BYTES;
     let kept = 0;
     let wasm = 0;
@@ -435,7 +437,7 @@
     let worstExtra = 0;
     let worstFile = 0;
     for (const file of files) {
-      const k = keptPoints(file, options);
+      const k = keptPoints(file, options || file.subsample || null);
       kept += k;
       steady += steadyBytes(file, k);
       wasm = Math.max(wasm, file.wasm);
