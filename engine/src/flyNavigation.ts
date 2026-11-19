@@ -9,8 +9,10 @@ import type { ViewerLifetime } from './utils/viewerLifetime';
  * Fly scheme ('fly'): a legacy trackball while standing still. Holding a
  * movement key (W/A/S/D, Q/E down/up, Shift faster) flies the camera and
  * its rotation center together, and a left drag then aims the camera from
- * where it stands (yaw about the scene's up axis, pitch about the camera's
- * right) instead of orbiting the center. "Always FPS" keeps that aiming
+ * where it stands (yaw about the camera's current up, pitch about its
+ * right) instead of orbiting the center. Nothing levels the view to a world
+ * axis: whatever up the trackball (or a roll) left is kept, since many
+ * scenes are not stored upright. "Always FPS" keeps that aiming
  * without a key held. The center stays straight ahead at the same distance,
  * so letting go of the keys returns to orbiting whatever is in front.
  *
@@ -20,6 +22,10 @@ import type { ViewerLifetime } from './utils/viewerLifetime';
  * Trackpad mode (fly and legacy trackball): two-finger scrolling drives the
  * trackball as if dragging (or aims, while FPS aiming is on), pinch zooms
  * toward the center, Shift+scroll pans. A mouse wheel then rotates too.
+ *
+ * Roll (trackball schemes): a `ply-roll` window event (degrees,
+ * counterclockwise positive) turns the view about its forward axis. The
+ * desktop app sends it from the macOS trackpad rotate gesture.
  */
 
 const MOVE: Record<string, [number, number, number]> = {
@@ -44,7 +50,6 @@ type TrackballLike = {
   target: THREE.Vector3;
   update(): void;
   rotateSpeed?: number;
-  worldUp?: THREE.Vector3;
   // TrackballControls internals, zeroed to stop its momentum.
   _lastAngle?: number;
   _movePrev?: THREE.Vector2;
@@ -71,20 +76,6 @@ function isTyping(target: EventTarget | null): boolean {
     target instanceof HTMLSelectElement ||
     (target instanceof HTMLElement && target.isContentEditable)
   );
-}
-
-/** The principal axis closest to `v` (the scene's up when none was set). */
-export function nearestAxis(v: THREE.Vector3): THREE.Vector3 {
-  const ax = Math.abs(v.x);
-  const ay = Math.abs(v.y);
-  const az = Math.abs(v.z);
-  if (ax >= ay && ax >= az) {
-    return new THREE.Vector3(Math.sign(v.x) || 1, 0, 0);
-  }
-  if (ay >= az) {
-    return new THREE.Vector3(0, Math.sign(v.y) || 1, 0);
-  }
-  return new THREE.Vector3(0, 0, Math.sign(v.z) || 1);
 }
 
 export class FlyNavigation {
@@ -124,6 +115,12 @@ export class FlyNavigation {
     lifetime.listen(container, 'wheel', e => this.onWheel(e as WheelEvent), {
       capture: true,
       passive: false,
+    });
+    lifetime.listen(window, 'ply-roll', e => {
+      const degrees = Number(e.detail?.degrees);
+      if (Number.isFinite(degrees)) {
+        this.roll(degrees);
+      }
     });
   }
 
@@ -196,8 +193,8 @@ export class FlyNavigation {
     }
     const { camera, controls } = this.host;
     const dir = camera.getWorldDirection(new THREE.Vector3());
-    const worldUp = this.worldUp();
-    const side = new THREE.Vector3().crossVectors(dir, worldUp);
+    const camUp = this.cameraUp();
+    const side = new THREE.Vector3().crossVectors(dir, camUp);
     if (side.lengthSq() < 1e-10) {
       side.setFromMatrixColumn(camera.matrixWorld, 0);
     }
@@ -205,7 +202,7 @@ export class FlyNavigation {
     const move = new THREE.Vector3()
       .addScaledVector(dir, forward)
       .addScaledVector(side, right)
-      .addScaledVector(worldUp, up)
+      .addScaledVector(camUp, up)
       .normalize();
     const distance = Math.max(camera.position.distanceTo(controls.target), 1e-3);
     const speed = distance * BASE_SPEED * navigation.speed * (this.sprint ? SPRINT : 1);
@@ -218,18 +215,35 @@ export class FlyNavigation {
 
   // ---- aiming --------------------------------------------------------------------
 
-  private worldUp(): THREE.Vector3 {
-    const controls = this.host.controls;
-    if (!controls.worldUp) {
-      controls.worldUp = nearestAxis(this.host.camera.up);
+  /** The camera's up as it is now (never snapped to a world axis). */
+  private cameraUp(): THREE.Vector3 {
+    const up = this.host.camera.up.clone();
+    return up.lengthSq() > 1e-12 ? up.normalize() : new THREE.Vector3(0, 1, 0);
+  }
+
+  /** Turns the view about its forward axis; positive is counterclockwise. */
+  roll(degrees: number): void {
+    const type = this.host.controlType;
+    if (type !== 'fly' && type !== 'legacy-trackball' && type !== 'trackball') {
+      return;
     }
-    return controls.worldUp.clone().normalize();
+    const { camera, controls } = this.host;
+    const dir = controls.target.clone().sub(camera.position);
+    if (dir.lengthSq() < 1e-12) {
+      return;
+    }
+    this.stopMomentum();
+    // Turning the camera clockwise (about the axis into the screen) makes
+    // the scene turn counterclockwise, with the fingers.
+    camera.up.applyAxisAngle(dir.normalize(), THREE.MathUtils.degToRad(degrees));
+    camera.lookAt(controls.target);
+    this.host.requestRender();
   }
 
   /** Turns the view by a pointer movement in pixels (right/down positive). */
   private aim(dx: number, dy: number): void {
     const { camera, controls } = this.host;
-    const up = this.worldUp();
+    const up = this.cameraUp();
     const distance = Math.max(camera.position.distanceTo(controls.target), 1e-3);
     const radians = LOOK_RADIANS_PER_PX * navigation.lookSensitivity;
     const dir = camera.getWorldDirection(new THREE.Vector3());
@@ -242,7 +256,6 @@ export class FlyNavigation {
         dir.copy(pitched);
       }
     }
-    camera.up.copy(up);
     controls.target.copy(camera.position).addScaledVector(dir, distance);
     camera.lookAt(controls.target);
     this.host.requestRender();

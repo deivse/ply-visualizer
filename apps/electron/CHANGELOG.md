@@ -7,7 +7,10 @@ GitHub release (`desktop-v<version>`), so keep the `## <version>` headings.
 
 - **Trackball + Fly:** a new control scheme. It is the legacy trackball while
   still; hold W/A/S/D to fly (Q/E down/up, Shift faster) and drag while moving
-  to aim FPS-style from where the camera stands.
+  to aim FPS-style from where the camera stands. Aiming keeps the camera's
+  current up instead of snapping to a world axis.
+- **Roll on macOS:** the trackpad rotate gesture turns the view about its
+  forward axis (Trackball, Legacy Trackball, Trackball + Fly).
 - **Navigation panel** (View ▸ Navigation Panel, or the Controls tab): control
   scheme, fly and aim speed, **Always aim (FPS)**, and **Trackpad mode** —
   two-finger scroll rotates without clicking, pinch zooms, Shift+scroll pans.

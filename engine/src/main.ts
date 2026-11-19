@@ -102,7 +102,7 @@ import * as sceneBrightness from './sceneBrightness';
 import * as depthDefaultSettings from './depth/defaultSettings';
 import * as calibrationForm from './depth/calibrationForm';
 import * as controlSchemeSwitcher from './controlSchemeSwitcher';
-import { FlyNavigation, nearestAxis } from './flyNavigation';
+import { FlyNavigation } from './flyNavigation';
 import { mountNavigationPanel } from './navigationPanelMount';
 import { loadControlScheme } from './state/navigation.svelte';
 import * as cameraConvention from './cameraConvention';
@@ -1013,8 +1013,6 @@ export class PointCloudVisualizer {
       if (this.controlType === 'fly') {
         // A/S/D are its rotate/zoom/pan hold keys; here they fly.
         trackballControls.keys = ['', '', ''];
-        // Flight and aiming are level with the scene's up (set by X/Y/Z).
-        (trackballControls as any).worldUp = nearestAxis(this.camera.up);
       }
     } else if (this.controlType === 'arcball') {
       this.controls = new CustomArcballControls(this.camera, this.renderer.domElement);

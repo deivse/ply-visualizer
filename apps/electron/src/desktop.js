@@ -250,6 +250,10 @@
   whenReady().then(() => {
     if (window.plyNavigation) bridge.reportNavigationPanel(window.plyNavigation.visible);
   });
+  // macOS trackpad rotate gesture rolls the camera.
+  bridge.onRotateGesture(degrees =>
+    window.dispatchEvent(new CustomEvent('ply-roll', { detail: { degrees } }))
+  );
 
   // View → Files → Show Full Paths / Abbreviate Identical Parts mirror the
   // options of the file list (also in its right-click menu).

@@ -18,6 +18,9 @@ contextBridge.exposeInMainWorld('plyDesktop', {
   onToggleNavigationPanel: callback => {
     ipcRenderer.on('toggle-navigation-panel', () => callback());
   },
+  onRotateGesture: callback => {
+    ipcRenderer.on('rotate-gesture', (_event, degrees) => callback(Number(degrees)));
+  },
   reportNavigationPanel: visible =>
     ipcRenderer.send('navigation-panel-visibility', visible === true),
   /** File > Advanced Open: the host asks how to subsample; answer with options or null. */

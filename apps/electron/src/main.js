@@ -829,6 +829,13 @@ function createWindow(initialPaths) {
     savePrefs();
   });
   win.on('focus', syncViewMenu);
+  // macOS trackpad rotate: web content never sees it, so pass it on to roll
+  // the camera (degrees since the last event, counterclockwise positive).
+  win.on('rotate-gesture', (_event, rotation) => {
+    if (Number.isFinite(rotation) && rotation !== 0) {
+      win.webContents.send('rotate-gesture', rotation);
+    }
+  });
   win.webContents.on('did-start-loading', () => {
     windowState.get(win).ready = false;
     cancelAsks(win.webContents);

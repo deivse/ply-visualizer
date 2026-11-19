@@ -3,6 +3,8 @@ type ViewerEvents = WindowEventMap & {
   webglcontextlost: Event;
   webglcontextrestored: Event;
   visibilitychange: Event;
+  /** Camera roll in degrees, counterclockwise positive (flyNavigation.ts). */
+  'ply-roll': CustomEvent<{ degrees: number }>;
 };
 export class ViewerLifetime {
   private readonly controller = new AbortController();
